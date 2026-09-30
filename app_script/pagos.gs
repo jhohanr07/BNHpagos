@@ -43,12 +43,12 @@ const COL_CONCEPTO_PAGO  = 12; // L  -> Concepto de pago (Inicial / Reserva / pa
 const COL_TELEFONO       = 13; // M  -> Teléfono ingresado en el formulario
 const COL_RIF            = 14; // N  -> URL del RIF adjunto (Inicial / Reserva)
 const COL_VENDEDOR       = 15; // O  -> VENDEDOR (Inicial / Reserva)
-const COL_EMPRESA        = 18; // R  -> NUEVO: EMPRESA (usada por el filtro del panel admin)
+const COL_EMPRESA        = 18; // R  -> EMPRESA (usada por el filtro del panel admin)
+const COL_TASA_BINANCE   = 22; // V  -> TASA BINANCE (usada por la tarjeta de Bolívares del panel admin)
 
 // Valores de "Tipo de pago" (columna D) que activan el escaneo de SERIALES
 // DE BILLETES en lugar del flujo tradicional de Referencia/Monto/Beneficiario.
 const TIPOS_PAGO_EFECTIVO = ['EFECTIVO', 'CASH', 'DIVISAS', 'EFECTIVO BS', 'EFECTIVO USD'];
-const COL_TASA_BINANCE   = 22; // R  -> TASA BINANCE (usada por el filtro del panel admin)
 
 // Valor EXACTO de "Tipo de pago" (columna D) para el cual el Monto (columna I)
 // NO se calcula por OCR, sino que viene directamente del formulario web
@@ -411,7 +411,8 @@ function obtenerPagos() {
         telefono:         fila[COL_TELEFONO - 1],
         rifUrl:           fila[COL_RIF - 1],
         vendedor:         fila[COL_VENDEDOR - 1],
-        empresa:          fila[COL_EMPRESA - 1] // NUEVO: Columna R, usada por el filtro del panel admin
+        empresa:          fila[COL_EMPRESA - 1],          // Columna R, usada por el filtro del panel admin
+        tasaBinance:      fila[COL_TASA_BINANCE - 1]      // NUEVO: Columna V, usada para convertir Bs a USD en el panel admin
       }));
   } catch (err) {
     // Un fallo aquí no debe tumbar el panel admin: se registra y se
