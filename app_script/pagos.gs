@@ -48,6 +48,7 @@ const COL_EMPRESA        = 18; // R  -> NUEVO: EMPRESA (usada por el filtro del 
 // Valores de "Tipo de pago" (columna D) que activan el escaneo de SERIALES
 // DE BILLETES en lugar del flujo tradicional de Referencia/Monto/Beneficiario.
 const TIPOS_PAGO_EFECTIVO = ['EFECTIVO', 'CASH', 'DIVISAS', 'EFECTIVO BS', 'EFECTIVO USD'];
+const COL_TASA_BINANCE   = 22; // R  -> TASA BINANCE (usada por el filtro del panel admin)
 
 // Valor EXACTO de "Tipo de pago" (columna D) para el cual el Monto (columna I)
 // NO se calcula por OCR, sino que viene directamente del formulario web
