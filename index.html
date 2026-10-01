@@ -598,14 +598,13 @@ function mostrarArchivo(input){
 
   setCargando(true);
 
-  // Se leen TODOS los comprobantes (y el RIF si aplica) en paralelo
   const lecturasComprobantes = Promise.all(archivosSeleccionados.map(leerArchivoComoBase64));
   const lecturaRif = rifFile ? leerArchivoComoBase64(rifFile) : Promise.resolve(null);
 
   Promise.all([lecturasComprobantes, lecturaRif])
     .then(function(resultados){
-      const comprobantes = resultados[0];   // [{nombreArchivo, archivoBase64}, ...]
-      const rifLeido = resultados[1];       // null si no hay RIF
+      const comprobantes = resultados[0];
+      const rifLeido = resultados[1];
 
       const formData = {
         nombre: document.getElementById('nombre').value,
@@ -618,68 +617,31 @@ function mostrarArchivo(input){
         correo: document.getElementById('correo').value,
         telefono: telefonoInput.value.trim(),
         vendedor: document.getElementById('vendedor').value,
-        // NUEVO: lista de adjuntos (hasta 10) -> una fila en PAGOS por cada uno
         archivos: comprobantes,
         nombreArchivoRif: rifLeido ? rifLeido.nombreArchivo : '',
         archivoRifBase64: rifLeido ? rifLeido.archivoBase64 : ''
       };
 
-      if (typeof google !== 'undefined' && google.script){
-        google.script.run
-          .withSuccessHandler(onSuccess)
-          .withFailureHandler(onError)
-          .procesarFormulario(formData);
-      } else {
-        setTimeout(() => onSuccess({success:true, guardados: comprobantes.length, total: comprobantes.length, duplicados: []}), 1500);
+      try {
+        if (typeof google !== 'undefined' && google.script){
+          google.script.run
+            .withSuccessHandler(onSuccess)
+            .withFailureHandler(onError)
+            .procesarFormulario(formData);
+        } else {
+          setTimeout(() => onSuccess({success:true, guardados: comprobantes.length, total: comprobantes.length, duplicados: []}), 1500);
+        }
+      } catch (errEnvio) {
+        console.error('❌ Error al enviar al servidor:', errEnvio);
+        setCargando(false);
+        mostrarMensaje('Error al enviar: ' + errEnvio.message, 'error');
       }
     })
-    .catch(function(){
+    .catch(function(err){
+      console.error('❌ Error al leer los archivos:', err);
       setCargando(false);
-      mostrarMensaje('Error al leer los archivos. Intenta de nuevo.', 'error');
+      mostrarMensaje('Error al leer los archivos: ' + (err && err.message ? err.message : err), 'error');
     });
-}
-
- function onSuccess(respuesta){
-  setCargando(false);
-
-  // Todos los adjuntos eran duplicados: no se guardó nada
-  if (respuesta.duplicado) {
-    Swal.fire({
-      icon: 'error',
-      title: 'Pago duplicado',
-      text: 'Error: Pago duplicado. La(s) referencia(s) N° ' + respuesta.referencia + ' ya fue(ron) registrada(s) previamente.',
-      confirmButtonColor: '#016589',
-      confirmButtonText: 'Entendido'
-    });
-    mostrarMensaje('Estos comprobantes ya fueron reportados anteriormente (Ref. ' + respuesta.referencia + ').', 'error');
-    return;
-  }
-
-  if(respuesta.success){
-    document.getElementById('pagoForm').reset();
-    document.getElementById('fileField').classList.remove('has-file');
-    document.getElementById('filename').style.display = 'none';
-    actualizarEtiquetaTitular();
-    toggleMontoField();
-    toggleVendedorField();
-    toggleRifField();
-
-    const dups = respuesta.duplicados || [];
-    if (dups.length > 0) {
-      Swal.fire({
-        icon: 'info',
-        title: 'Pago reportado parcialmente',
-        html: 'Se guardaron <b>' + respuesta.guardados + '</b> de ' + respuesta.total + ' comprobantes.<br><br>' +
-              'Se omitieron por estar duplicados (Ref.): ' + dups.join(', '),
-        confirmButtonColor: '#016589',
-        confirmButtonText: 'Entendido'
-      });
-    }
-    const n = respuesta.guardados || 1;
-    mostrarMensaje('¡Pago reportado con éxito! Hemos guardado ' + n + (n === 1 ? ' comprobante.' : ' comprobantes.'), 'exito');
-  } else {
-    mostrarMensaje('Ocurrió un error al guardar: ' + respuesta.error, 'error');
-  }
 }
 </script>
 </body>
