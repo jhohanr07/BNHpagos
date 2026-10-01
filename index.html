@@ -643,6 +643,48 @@ function mostrarArchivo(input){
       mostrarMensaje('Error al leer los archivos: ' + (err && err.message ? err.message : err), 'error');
     });
 }
+function onSuccess(respuesta){
+  setCargando(false);
+
+  // Todos los adjuntos eran duplicados: no se guardó nada
+  if (respuesta.duplicado) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Pago duplicado',
+      text: 'Error: Pago duplicado. La(s) referencia(s) N° ' + respuesta.referencia + ' ya fue(ron) registrada(s) previamente.',
+      confirmButtonColor: '#016589',
+      confirmButtonText: 'Entendido'
+    });
+    mostrarMensaje('Estos comprobantes ya fueron reportados anteriormente (Ref. ' + respuesta.referencia + ').', 'error');
+    return;
+  }
+
+  if(respuesta.success){
+    document.getElementById('pagoForm').reset();
+    document.getElementById('fileField').classList.remove('has-file');
+    document.getElementById('filename').style.display = 'none';
+    actualizarEtiquetaTitular();
+    toggleMontoField();
+    toggleVendedorField();
+    toggleRifField();
+
+    const dups = respuesta.duplicados || [];
+    if (dups.length > 0) {
+      Swal.fire({
+        icon: 'info',
+        title: 'Pago reportado parcialmente',
+        html: 'Se guardaron <b>' + respuesta.guardados + '</b> de ' + respuesta.total + ' comprobantes.<br><br>' +
+              'Se omitieron por estar duplicados (Ref.): ' + dups.join(', '),
+        confirmButtonColor: '#016589',
+        confirmButtonText: 'Entendido'
+      });
+    }
+    const n = respuesta.guardados || 1;
+    mostrarMensaje('¡Pago reportado con éxito! Hemos guardado ' + n + (n === 1 ? ' comprobante.' : ' comprobantes.'), 'exito');
+  } else {
+    mostrarMensaje('Ocurrió un error al guardar: ' + respuesta.error, 'error');
+  }
+}
 </script>
 </body>
 </html>
