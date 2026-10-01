@@ -60,6 +60,13 @@ const TIPO_PAGO_MONTO_MANUAL = 'EFECTIVO';
 // seleccionar el Vendedor en el formulario. Comparación en mayúsculas
 // contra formData.conceptoPago.
 const CONCEPTOS_QUE_REQUIEREN_RIF = ['INICIAL', 'RESERVA'];
+// Máximo de adjuntos de soporte por envío (una fila en PAGOS por cada uno)
+const MAX_ARCHIVOS_SOPORTE = 10;
+
+// Si el Tipo de pago es exactamente "Efectivo" (monto manual):
+// false = el monto va solo en la primera fila (evita sumar el mismo monto N veces)
+// true  = el monto se repite en todas las filas
+const REPETIR_MONTO_MANUAL_EN_TODAS = false;
 
 /* ============================================================================
  * VALIDACIÓN DE PAGOS DUPLICADOS (columna H - Referencia)
@@ -144,7 +151,7 @@ function doGet(e) {
 
 // Campos obligatorios que debe traer formData para poder procesar el pago.
 const CAMPOS_REQUERIDOS_FORMULARIO = [
-  'archivoBase64', 'nombreArchivo', 'nombre', 'fechaPago', 'conceptoPago', 'tipoPago', 'moneda', 'titular', 'telefono'
+  'nombre', 'fechaPago', 'conceptoPago', 'tipoPago', 'moneda', 'titular', 'telefono'
 ];
 
 // Formato esperado para el teléfono -> +58 seguido de 10 dígitos
@@ -187,6 +194,22 @@ function requiereRif(conceptoPago) {
  * @param {Object} formData
  * @return {{valido: boolean, error: string}}
  */
+/**
+ * Devuelve la lista de adjuntos del formulario como [{nombreArchivo, archivoBase64}].
+ * Acepta el formato nuevo (formData.archivos) y el antiguo (un solo archivo).
+ */
+function obtenerArchivosDeFormData_(formData) {
+  if (Array.isArray(formData.archivos) && formData.archivos.length > 0) {
+    return formData.archivos;
+  }
+  if (formData.archivoBase64 && formData.nombreArchivo) {
+    return [{ nombreArchivo: formData.nombreArchivo, archivoBase64: formData.archivoBase64 }];
+  }
+  return [];
+}
+
+
+
 function validarFormData(formData) {
   if (!formData || typeof formData !== 'object') {
     return { valido: false, error: 'No se recibieron datos del formulario.' };
@@ -198,20 +221,28 @@ function validarFormData(formData) {
     }
   }
 
-  // Validación de formato del teléfono (+58 + 10 dígitos)
   const telefonoLimpio = String(formData.telefono || '').trim();
   if (!REGEX_TELEFONO.test(telefonoLimpio)) {
     return { valido: false, error: 'El teléfono debe tener el formato +58 seguido del código y número (Ej: +584121234567).' };
   }
 
-  const partes = String(formData.archivoBase64).split(',');
-  const match = partes[0] && partes[0].match(/data:(.*);base64/);
-  if (partes.length < 2 || !match) {
-    return { valido: false, error: 'El archivo del comprobante no tiene un formato Base64 válido.' };
+  // Adjuntos de soporte: de 1 a MAX_ARCHIVOS_SOPORTE
+  const archivos = obtenerArchivosDeFormData_(formData);
+  if (archivos.length === 0) {
+    return { valido: false, error: 'Debes adjuntar al menos un soporte de pago.' };
+  }
+  if (archivos.length > MAX_ARCHIVOS_SOPORTE) {
+    return { valido: false, error: 'Máximo ' + MAX_ARCHIVOS_SOPORTE + ' archivos por envío.' };
+  }
+  for (let i = 0; i < archivos.length; i++) {
+    const a = archivos[i] || {};
+    const partesA = String(a.archivoBase64 || '').split(',');
+    const matchA = partesA[0] && partesA[0].match(/data:(.*);base64/);
+    if (!a.nombreArchivo || partesA.length < 2 || !matchA) {
+      return { valido: false, error: 'El archivo #' + (i + 1) + ' no tiene un formato Base64 válido.' };
+    }
   }
 
-  // Si el Tipo de pago es exactamente "Efectivo", el monto NO se detecta por
-  // OCR: debe venir del formulario en el campo "montoManual".
   if (requiereMontoManual(formData.tipoPago)) {
     const montoManual = Number(formData.montoManual);
     if (!formData.montoManual || isNaN(montoManual) || montoManual <= 0) {
@@ -219,8 +250,6 @@ function validarFormData(formData) {
     }
   }
 
-  // Si el Concepto de pago es "Inicial" o "Reserva", el RIF y el Vendedor
-  // son obligatorios.
   if (requiereRif(formData.conceptoPago)) {
     if (!formData.archivoRifBase64 || !formData.nombreArchivoRif) {
       return { valido: false, error: 'Debes adjuntar el RIF para el concepto de pago seleccionado (' + formData.conceptoPago + ').' };
@@ -230,8 +259,6 @@ function validarFormData(formData) {
     if (partesRif.length < 2 || !matchRif) {
       return { valido: false, error: 'El archivo del RIF no tiene un formato Base64 válido.' };
     }
-
-    // NUEVO: Vendedor obligatorio cuando el Concepto es Inicial/Reserva.
     if (!formData.vendedor || !String(formData.vendedor).trim()) {
       return { valido: false, error: 'Debes seleccionar el Vendedor para el concepto de pago seleccionado (' + formData.conceptoPago + ').' };
     }
@@ -241,11 +268,10 @@ function validarFormData(formData) {
 }
 
 /**
- * Recibe el formulario público, sube el comprobante a Drive,
- * agrega la fila (A-G) y dispara el OCR automáticamente sobre esa fila.
- * Si viene un RIF adjunto (obligatorio cuando el Concepto de pago es
- * "Inicial" o "Reserva"), también lo sube a Drive y guarda su URL en la
- * columna N. En ese mismo caso, guarda el Vendedor en la columna O.
+ * Recibe el formulario público. Por CADA adjunto de soporte (hasta 10):
+ * sube el archivo a Drive, agrega una fila en PAGOS con los mismos datos,
+ * corre el OCR sobre esa fila y valida duplicados por referencia.
+ * El RIF (Inicial / Reserva) se sube una sola vez y su URL se repite en cada fila.
  */
 function procesarFormulario(formData) {
   try {
@@ -260,118 +286,117 @@ function procesarFormulario(formData) {
       return { success: false, error: 'No se encontró la hoja "' + NOMBRE_HOJA + '" en el spreadsheet.' };
     }
 
-    // 1. Guardar el comprobante en Drive
-    const partes = formData.archivoBase64.split(',');
-    const contentType = partes[0].match(/data:(.*);base64/)[1];
-    const bytes = Utilities.base64Decode(partes[1]);
-    const blob = Utilities.newBlob(bytes, contentType, formData.nombreArchivo);
-
+    const archivos = obtenerArchivosDeFormData_(formData);
     const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-    const file = folder.createFile(blob);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    const comprobanteUrl = file.getUrl();
 
-    // 2. Agregar la fila (columnas A-G)
-    // IMPORTANTE: appendRow solo escribe A-G. Las columnas H-J las llena el
-    // OCR más abajo, y K, L, M, N y O (correo, concepto, teléfono, RIF,
-    // vendedor) se escriben explícitamente por número de columna para no
-    // desplazar ni desordenar los datos existentes.
-    sheet.appendRow([
-      new Date(),              // A - Fecha registro
-      formData.nombre,         // B - Nombre
-      formData.fechaPago,      // C - Fecha pago (yyyy-mm-dd)
-      formData.tipoPago,       // D - Tipo de pago (Zelle / Bs / Binance / Efectivo)
-      formData.moneda,         // E - Moneda (USD / Bs / USDT / Efectivo)
-      formData.titular,        // F - Titular cuenta origen
-      comprobanteUrl           // G - URL del comprobante
-    ]);
-
-    const fila = sheet.getLastRow();
-
-    // 2b. Guardar el correo electrónico ingresado en el formulario (columna K)
-    sheet.getRange(fila, COL_CORREO).setValue(formData.correo || '');
-
-    // 2c. Guardar el Concepto de pago ingresado en el formulario (columna L)
-    sheet.getRange(fila, COL_CONCEPTO_PAGO).setValue(formData.conceptoPago || '');
-
-    // 2d. Guardar el Teléfono ingresado en el formulario (columna M)
-    sheet.getRange(fila, COL_TELEFONO).setValue(String(formData.telefono || '').trim());
-
-    // 2e. Si viene un RIF adjunto, se sube a Drive y su URL se guarda en la
-    // columna N. Solo es obligatorio cuando el Concepto de pago es "Inicial"
-    // o "Reserva" (ya validado en validarFormData); fail-open: si la subida
-    // falla, el pago igual queda guardado y solo se registra el error en el log.
+    // --- RIF: se sube UNA sola vez (fail-open) ---
+    let rifUrl = '';
     if (formData.archivoRifBase64 && formData.nombreArchivoRif) {
       try {
         const partesRif = formData.archivoRifBase64.split(',');
         const contentTypeRif = partesRif[0].match(/data:(.*);base64/)[1];
-        const bytesRif = Utilities.base64Decode(partesRif[1]);
-        const blobRif = Utilities.newBlob(bytesRif, contentTypeRif, formData.nombreArchivoRif);
-
-        const folderRif = DriveApp.getFolderById(DRIVE_FOLDER_ID_RIF);
-        const fileRif = folderRif.createFile(blobRif);
+        const blobRif = Utilities.newBlob(Utilities.base64Decode(partesRif[1]), contentTypeRif, formData.nombreArchivoRif);
+        const fileRif = DriveApp.getFolderById(DRIVE_FOLDER_ID_RIF).createFile(blobRif);
         fileRif.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-
-        sheet.getRange(fila, COL_RIF).setValue(fileRif.getUrl());
-        console.log('✅ RIF guardado en Drive y URL registrada en columna N.');
+        rifUrl = fileRif.getUrl();
+        console.log('✅ RIF guardado en Drive.');
       } catch (errRif) {
-        console.error('⚠️ El pago se guardó pero no se pudo subir el RIF: ' + errRif.message);
+        console.error('⚠️ No se pudo subir el RIF: ' + errRif.message);
       }
     }
 
-    // 2f. NUEVO: Guardar el Vendedor (columna O), solo cuando el Concepto de
-    // pago es "Inicial" o "Reserva" (ya validado en validarFormData).
-    if (requiereRif(formData.conceptoPago)) {
-      sheet.getRange(fila, COL_VENDEDOR).setValue(String(formData.vendedor || '').trim());
-    }
+    const vendedor = requiereRif(formData.conceptoPago) ? String(formData.vendedor || '').trim() : '';
+    const guardados = [];
+    const duplicados = [];
+    const errores = [];
 
-    // 2g. Si el Tipo de pago es exactamente "Efectivo", el Monto (columna I)
-    // no se calcula por OCR: se guarda tal cual el valor manual enviado por
-    // el formulario. Se escribe ANTES de llamar a procesarOCRFila() para que
-    // el OCR (CASO A) sepa que no debe tocar esta columna.
-    if (requiereMontoManual(formData.tipoPago)) {
-      sheet.getRange(fila, COL_MONTO).setValue(Number(formData.montoManual));
-    }
-
-    // 3. Procesar OCR inmediatamente sobre la fila recién creada
-    let ocrOk = true;
-    try {
-      procesarOCRFila(sheet, fila);
-    } catch (ocrErr) {
-      ocrOk = false;
-      console.error('⚠️ El pago se guardó pero el OCR falló: ' + ocrErr.message);
-    }
-
-    // 4. VALIDACIÓN DE PAGO DUPLICADO (columna H)
-    // Si la Referencia recién detectada por OCR ya existe en el histórico,
-    // se revierte todo: se elimina la fila y se envía el comprobante a la
-    // papelera de Drive. El frontend recibe duplicado:true y NO da el pago
-    // por guardado.
-    if (ocrOk) {
+    for (let idx = 0; idx < archivos.length; idx++) {
+      const adjunto = archivos[idx];
+      let file = null;
       try {
-        const referenciaDetectada = sheet.getRange(fila, COL_REFERENCIA).getValue();
+        // 1. Subir comprobante a Drive
+        const partes = adjunto.archivoBase64.split(',');
+        const contentType = partes[0].match(/data:(.*);base64/)[1];
+        const blob = Utilities.newBlob(Utilities.base64Decode(partes[1]), contentType, adjunto.nombreArchivo);
+        file = folder.createFile(blob);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
-        if (referenciaYaExiste(sheet, referenciaDetectada, fila)) {
-          sheet.deleteRow(fila);
-          try {
-            file.setTrashed(true);
-          } catch (errTrash) {
-            console.error('⚠️ No se pudo enviar a la papelera el comprobante duplicado: ' + errTrash.message);
-          }
-          return {
-            success: false,
-            duplicado: true,
-            referencia: String(referenciaDetectada).trim()
-          };
+        // 2. Fila nueva (A-G)
+        sheet.appendRow([
+          new Date(),
+          formData.nombre,
+          formData.fechaPago,
+          formData.tipoPago,
+          formData.moneda,
+          formData.titular,
+          file.getUrl()
+        ]);
+        const fila = sheet.getLastRow();
+
+        // 2b. Columnas K a O en una sola escritura:
+        // K correo | L concepto | M teléfono | N RIF | O vendedor
+        sheet.getRange(fila, COL_CORREO, 1, 5).setValues([[
+          formData.correo || '',
+          formData.conceptoPago || '',
+          String(formData.telefono || '').trim(),
+          rifUrl,
+          vendedor
+        ]]);
+
+        // 2c. Monto manual (Efectivo exacto): ANTES del OCR
+        if (requiereMontoManual(formData.tipoPago) && (idx === 0 || REPETIR_MONTO_MANUAL_EN_TODAS)) {
+          sheet.getRange(fila, COL_MONTO).setValue(Number(formData.montoManual));
         }
-      } catch (errDup) {
-        // Si la validación de duplicados falla por cualquier motivo, no
-        // bloqueamos el pago (fail-open) — solo se registra el error.
-        console.error('⚠️ Error al validar pago duplicado: ' + errDup.message);
+
+        // 3. OCR sobre esta fila
+        let ocrOk = true;
+        try {
+          procesarOCRFila(sheet, fila);
+        } catch (ocrErr) {
+          ocrOk = false;
+          console.error('⚠️ Fila ' + fila + ' guardada pero el OCR falló: ' + ocrErr.message);
+        }
+
+        // 4. Validación de duplicado (columna H)
+        if (ocrOk) {
+          try {
+            const referenciaDetectada = sheet.getRange(fila, COL_REFERENCIA).getValue();
+            if (referenciaYaExiste(sheet, referenciaDetectada, fila)) {
+              sheet.deleteRow(fila);
+              try { file.setTrashed(true); } catch (errTrash) {
+                console.error('⚠️ No se pudo enviar a la papelera el duplicado: ' + errTrash.message);
+              }
+              duplicados.push(String(referenciaDetectada).trim());
+              continue;
+            }
+          } catch (errDup) {
+            console.error('⚠️ Error al validar duplicado (fail-open): ' + errDup.message);
+          }
+        }
+
+        guardados.push(fila);
+      } catch (errArchivo) {
+        console.error('❌ Error con el adjunto #' + (idx + 1) + ' (' + adjunto.nombreArchivo + '): ' + errArchivo.message);
+        errores.push(adjunto.nombreArchivo);
+        if (file) { try { file.setTrashed(true); } catch (e2) {} }
       }
     }
 
-    return { success: true };
+    // --- Resultado ---
+    if (guardados.length === 0) {
+      if (duplicados.length > 0) {
+        return { success: false, duplicado: true, referencia: duplicados.join(', ') };
+      }
+      return { success: false, error: 'No se pudo guardar ningún adjunto.' };
+    }
+
+    return {
+      success: true,
+      guardados: guardados.length,
+      total: archivos.length,
+      duplicados: duplicados,
+      errores: errores
+    };
   } catch (err) {
     return { success: false, error: err.message };
   }
