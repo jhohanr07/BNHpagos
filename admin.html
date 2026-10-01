@@ -5,7 +5,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Panel Administrativo · BNH Medical</title>
-<script src="gas-shim.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -363,7 +362,7 @@
 </div>
  
 <script>
-  // La clave ya NO vive en el código: se valida en el servidor (Apps Script).
+  const PIN_ADMIN = 'BNH2025';
   let pagosOriginal = [];
   let chartFecha, chartMoneda;
   
@@ -374,27 +373,13 @@
 
   function validarAcceso(){
     const val = document.getElementById('gatePass').value.trim();
-    const err = document.getElementById('gateErr');
-    err.style.display = 'none';
-    sessionStorage.setItem('bnh_pin', val);
-
-    google.script.run
-      .withSuccessHandler(function(ok){
-        if(ok){
-          document.getElementById('gate').style.display = 'none';
-          document.getElementById('app').style.display = 'block';
-          cargarDatos();
-        } else {
-          sessionStorage.removeItem('bnh_pin');
-          err.textContent = 'Clave incorrecta. Intenta de nuevo.';
-          err.style.display = 'block';
-        }
-      })
-      .withFailureHandler(function(){
-        err.textContent = 'No se pudo conectar. Intenta de nuevo.';
-        err.style.display = 'block';
-      })
-      .validarPin(val);
+    if(val === PIN_ADMIN){
+      document.getElementById('gate').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      cargarDatos();
+    } else {
+      document.getElementById('gateErr').style.display = 'block';
+    }
   }
 
   function cargarDatos(){
@@ -507,6 +492,18 @@
 
   function getTasa(p){
     return parseTasa(p.tasaBinance !== undefined ? p.tasaBinance : (p.tasa !== undefined ? p.tasa : p.tasaBinanceV));
+  }
+
+  // Monto en USD para los gráficos: los pagos en Bs se convierten (monto / Tasa Binance);
+  // el resto de monedas se toma tal cual. Si un pago en Bs no tiene tasa, no se suma.
+  function montoParaGrafico(p){
+    const m = p.moneda || mapMoneda(p.tipoPago);
+    const monto = parseMonto(p.monto);
+    if (m === 'Bs'){
+      const tasa = getTasa(p);
+      return tasa > 0 ? monto / tasa : 0;
+    }
+    return monto;
   }
 
   function fmt(n, moneda){
@@ -623,7 +620,7 @@
     const porFecha = {};
     datos.forEach(p => {
       const f = p.fecha || p.fechaPago || 'Sin fecha';
-      porFecha[f] = (porFecha[f] || 0) + parseMonto(p.monto);
+      porFecha[f] = (porFecha[f] || 0) + montoParaGrafico(p);
     });
     const fechas = Object.keys(porFecha).sort();
     
@@ -653,7 +650,8 @@
         }] 
       },
       options:{ 
-        responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } },
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:(c) => ' ' + fmt(c.parsed.y, 'USD') + ' (Bs convertidos a USD)' } } },
         scales:{ 
           x:{ grid:{ color:chartColors.grid }, ticks:{ color:chartColors.text, font:{ family:"'JetBrains Mono', monospace", size:10.5 } } }, 
           y:{ beginAtZero:true, grid:{ color:chartColors.grid }, ticks:{ color:chartColors.text, font:{ family:"'JetBrains Mono', monospace", size:10.5 } } } 
@@ -664,7 +662,7 @@
     const grupos = { Bs:0, USD:0, USDT:0, Efectivo:0 };
     datos.forEach(p => {
       const m = p.moneda || mapMoneda(p.tipoPago);
-      if(grupos[m] !== undefined) grupos[m] += parseMonto(p.monto);
+      if(grupos[m] !== undefined) grupos[m] += montoParaGrafico(p);
     });
 
     const ctx2 = document.getElementById('chartMoneda').getContext('2d');
@@ -681,7 +679,7 @@
       },
       options:{ 
         responsive:true, maintainAspectRatio:false, cutout:'68%',
-        plugins:{ legend:{ position:'bottom', labels:{ color:chartColors.text, boxWidth:10, boxHeight:10, font:{ family:"'Inter', sans-serif", size:11.5 } } } } 
+        plugins:{ legend:{ position:'bottom', labels:{ color:chartColors.text, boxWidth:10, boxHeight:10, font:{ family:"'Inter', sans-serif", size:11.5 } } }, tooltip:{ callbacks:{ label:(c) => ' ' + c.label + ': ' + fmt(c.parsed, 'USD') } } } 
       }
     });
   }
