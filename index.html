@@ -685,6 +685,14 @@ function onSuccess(respuesta){
     mostrarMensaje('Ocurrió un error al guardar: ' + respuesta.error, 'error');
   }
 }
+function onError(error){
+  console.error('❌ Error de conexión con el servidor:', error);
+  setCargando(false);
+  mostrarMensaje('Hubo un problema de conexión. Intenta nuevamente.', 'error');
+}
+</script>
+</body>
+</html>
 </script>
 </body>
 </html>
