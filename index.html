@@ -245,7 +245,7 @@
                 Elegir archivo
               </label>
               <input type="file" id="comprobante" accept="image/jpeg, image/png, image/jpg, application/pdf" multiple onchange="mostrarArchivo(this)">
-              <p class="hint">JPG, PNG o PDF · Hasta 5 archivos · 5MB c/u</p>
+              <p class="hint">JPG, PNG o PDF · Hasta 10 archivos · 5MB c/u</p>
               <p class="filename" id="filename" style="display:none;"></p>
             </div>
           </div>
@@ -425,26 +425,50 @@
   }
   document.addEventListener('DOMContentLoaded', cargarVendedores);
 
-  function mostrarArchivo(input){
-    const field = document.getElementById('fileField');
-    const fname = document.getElementById('filename');
-    const cantidad = input.files ? input.files.length : 0;
+  const MAX_ARCHIVOS = 10;
+  const MAX_BYTES_POR_ARCHIVO = 5 * 1024 * 1024;   // 5 MB c/u
+  const MAX_BYTES_TOTAL = 25 * 1024 * 1024;        // 25 MB en total
 
-    if(cantidad > 0){
-      field.classList.add('has-file');
-      fname.style.display = 'block';
-      if(cantidad === 1){
-        fname.textContent = input.files[0].name;
-      } else {
-        // Varios archivos: se muestra el conteo y la lista de nombres
-        const nombres = Array.from(input.files).map(f => f.name).join(', ');
-        fname.textContent = cantidad + ' archivos seleccionados: ' + nombres;
-      }
-    } else {
-      field.classList.remove('has-file');
-      fname.style.display = 'none';
-    }
+function mostrarArchivo(input){
+  const field = document.getElementById('fileField');
+  const fname = document.getElementById('filename');
+  const archivos = input.files ? Array.from(input.files) : [];
+
+  if (archivos.length > MAX_ARCHIVOS){
+    input.value = '';
+    field.classList.remove('has-file');
+    fname.style.display = 'none';
+    Swal.fire({ icon:'warning', title:'Demasiados archivos',
+      text:'Puedes adjuntar máximo ' + MAX_ARCHIVOS + ' archivos por envío.',
+      confirmButtonColor:'#016589', confirmButtonText:'Entendido' });
+    return;
   }
+
+  const muyGrande = archivos.find(f => f.size > MAX_BYTES_POR_ARCHIVO);
+  const total = archivos.reduce((s, f) => s + f.size, 0);
+  if (muyGrande || total > MAX_BYTES_TOTAL){
+    input.value = '';
+    field.classList.remove('has-file');
+    fname.style.display = 'none';
+    Swal.fire({ icon:'warning', title:'Archivos muy pesados',
+      text: muyGrande
+        ? 'El archivo "' + muyGrande.name + '" supera los 5MB.'
+        : 'El peso total de los archivos supera los 25MB.',
+      confirmButtonColor:'#016589', confirmButtonText:'Entendido' });
+    return;
+  }
+
+  if (archivos.length > 0){
+    field.classList.add('has-file');
+    fname.style.display = 'block';
+    fname.textContent = archivos.length === 1
+      ? archivos[0].name
+      : archivos.length + ' archivos seleccionados: ' + archivos.map(f => f.name).join(', ');
+  } else {
+    field.classList.remove('has-file');
+    fname.style.display = 'none';
+  }
+}
 
   /* Lee un único archivo del navegador y lo convierte a base64 (Promise) */
   function leerArchivoComoBase64(file){
@@ -527,110 +551,107 @@
     return faltantes;
   }
 
-  function enviarFormulario(e){
-    e.preventDefault();
-    document.getElementById('mensaje').className = '';
+ function enviarFormulario(e){
+  e.preventDefault();
+  document.getElementById('mensaje').className = '';
 
-    // NUEVO: validación estricta de todos los campos obligatorios.
-    // Si falta algo, se muestra la lista completa y no se envía nada.
-    const camposFaltantes = obtenerCamposFaltantes();
-    if (camposFaltantes.length > 0) {
-      Swal.fire({
-        icon: 'warning',
-        title: 'Faltan datos por completar',
-        html: 'Por favor completa los siguientes campos:<br><br>• ' + camposFaltantes.join('<br>• '),
-        confirmButtonColor: '#016589',
-        confirmButtonText: 'Entendido'
-      });
-      return;
-    }
-
-    const fileInput = document.getElementById('comprobante');
-    const file = fileInput.files[0];
-
-    if(file.size > 25 * 1024 * 1024){
-      mostrarMensaje('El archivo es demasiado grande. El máximo permitido es 25MB.', 'error');
-      return;
-    }
-
-    // Validación básica del formato del teléfono antes de enviar
-    const telefonoInput = document.getElementById('telefono');
-    const telefonoRegex = /^\+58\d{10}$/;
-    if(!telefonoRegex.test(telefonoInput.value.trim())){
-      mostrarMensaje('El teléfono debe tener el formato +58 seguido del código y número (Ej: +584121234567).', 'error');
-      telefonoInput.focus();
-      return;
-    }
-
-    const selMoneda = document.getElementById('tipoPago');
-    const moneda = selMoneda.options[selMoneda.selectedIndex]
-      ? selMoneda.options[selMoneda.selectedIndex].getAttribute('data-moneda')
-      : '';
-
-    // NUEVO: si el campo RIF está visible (Inicial/Reserva), se lee también
-    // ese archivo en base64 junto con el comprobante, usando Promise.all
-    // para no anidar FileReaders.
-    const rifInput = document.getElementById('rif');
-    const rifVisible = document.getElementById('rifField').style.display !== 'none';
-    const rifFile = rifVisible && rifInput.files && rifInput.files[0] ? rifInput.files[0] : null;
-
-    setCargando(true);
-
-    const lecturas = [ leerArchivoComoBase64(file) ];
-    if (rifFile) lecturas.push(leerArchivoComoBase64(rifFile));
-
-    Promise.all(lecturas)
-      .then(function(resultados){
-        const comprobanteLeido = resultados[0];
-        const rifLeido = resultados[1]; // undefined si no había RIF
-
-        const formData = {
-          nombre: document.getElementById('nombre').value,
-          fechaPago: document.getElementById('fechaPago').value,
-          conceptoPago: document.getElementById('conceptoPago').value,
-          tipoPago: document.getElementById('tipoPago').value,
-          moneda: moneda,
-          // Se usa 'montoManual' para el monto ingresado manualmente en pagos en Efectivo
-          montoManual: document.getElementById('monto').value,
-          titular: document.getElementById('titular').value,
-          correo: document.getElementById('correo').value,
-          telefono: telefonoInput.value.trim(),
-          vendedor: document.getElementById('vendedor').value,
-          nombreArchivo: comprobanteLeido.nombreArchivo,
-          archivoBase64: comprobanteLeido.archivoBase64,
-          // NUEVO: RIF (solo presente cuando Concepto = Inicial/Reserva)
-          nombreArchivoRif: rifLeido ? rifLeido.nombreArchivo : '',
-          archivoRifBase64: rifLeido ? rifLeido.archivoBase64 : ''
-        };
-
-        if (typeof google !== 'undefined' && google.script){
-          google.script.run
-            .withSuccessHandler(onSuccess)
-            .withFailureHandler(onError)
-            .procesarFormulario(formData);
-        } else {
-          setTimeout(() => onSuccess({success:true}), 1500);
-        }
-      })
-      .catch(function(){
-        setCargando(false);
-        mostrarMensaje('Error al leer el archivo. Intenta de nuevo.', 'error');
-      });
+  const camposFaltantes = obtenerCamposFaltantes();
+  if (camposFaltantes.length > 0) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Faltan datos por completar',
+      html: 'Por favor completa los siguientes campos:<br><br>• ' + camposFaltantes.join('<br>• '),
+      confirmButtonColor: '#016589',
+      confirmButtonText: 'Entendido'
+    });
+    return;
   }
 
-  function onSuccess(respuesta){
+  const fileInput = document.getElementById('comprobante');
+  const archivosSeleccionados = Array.from(fileInput.files);
+
+  if (archivosSeleccionados.length > MAX_ARCHIVOS){
+    mostrarMensaje('Máximo ' + MAX_ARCHIVOS + ' archivos por envío.', 'error');
+    return;
+  }
+  if (archivosSeleccionados.some(f => f.size > MAX_BYTES_POR_ARCHIVO)){
+    mostrarMensaje('Cada archivo debe pesar máximo 5MB.', 'error');
+    return;
+  }
+
+  const telefonoInput = document.getElementById('telefono');
+  const telefonoRegex = /^\+58\d{10}$/;
+  if(!telefonoRegex.test(telefonoInput.value.trim())){
+    mostrarMensaje('El teléfono debe tener el formato +58 seguido del código y número (Ej: +584121234567).', 'error');
+    telefonoInput.focus();
+    return;
+  }
+
+  const selMoneda = document.getElementById('tipoPago');
+  const moneda = selMoneda.options[selMoneda.selectedIndex]
+    ? selMoneda.options[selMoneda.selectedIndex].getAttribute('data-moneda')
+    : '';
+
+  const rifInput = document.getElementById('rif');
+  const rifVisible = document.getElementById('rifField').style.display !== 'none';
+  const rifFile = rifVisible && rifInput.files && rifInput.files[0] ? rifInput.files[0] : null;
+
+  setCargando(true);
+
+  // Se leen TODOS los comprobantes (y el RIF si aplica) en paralelo
+  const lecturasComprobantes = Promise.all(archivosSeleccionados.map(leerArchivoComoBase64));
+  const lecturaRif = rifFile ? leerArchivoComoBase64(rifFile) : Promise.resolve(null);
+
+  Promise.all([lecturasComprobantes, lecturaRif])
+    .then(function(resultados){
+      const comprobantes = resultados[0];   // [{nombreArchivo, archivoBase64}, ...]
+      const rifLeido = resultados[1];       // null si no hay RIF
+
+      const formData = {
+        nombre: document.getElementById('nombre').value,
+        fechaPago: document.getElementById('fechaPago').value,
+        conceptoPago: document.getElementById('conceptoPago').value,
+        tipoPago: document.getElementById('tipoPago').value,
+        moneda: moneda,
+        montoManual: document.getElementById('monto').value,
+        titular: document.getElementById('titular').value,
+        correo: document.getElementById('correo').value,
+        telefono: telefonoInput.value.trim(),
+        vendedor: document.getElementById('vendedor').value,
+        // NUEVO: lista de adjuntos (hasta 10) -> una fila en PAGOS por cada uno
+        archivos: comprobantes,
+        nombreArchivoRif: rifLeido ? rifLeido.nombreArchivo : '',
+        archivoRifBase64: rifLeido ? rifLeido.archivoBase64 : ''
+      };
+
+      if (typeof google !== 'undefined' && google.script){
+        google.script.run
+          .withSuccessHandler(onSuccess)
+          .withFailureHandler(onError)
+          .procesarFormulario(formData);
+      } else {
+        setTimeout(() => onSuccess({success:true, guardados: comprobantes.length, total: comprobantes.length, duplicados: []}), 1500);
+      }
+    })
+    .catch(function(){
+      setCargando(false);
+      mostrarMensaje('Error al leer los archivos. Intenta de nuevo.', 'error');
+    });
+}
+
+ function onSuccess(respuesta){
   setCargando(false);
 
-  // === PAGO DUPLICADO: no se guardó nada, se debe alertar ===
+  // Todos los adjuntos eran duplicados: no se guardó nada
   if (respuesta.duplicado) {
     Swal.fire({
       icon: 'error',
       title: 'Pago duplicado',
-      text: 'Error: Pago duplicado. La referencia N° ' + respuesta.referencia + ' ya fue registrada previamente.',
+      text: 'Error: Pago duplicado. La(s) referencia(s) N° ' + respuesta.referencia + ' ya fue(ron) registrada(s) previamente.',
       confirmButtonColor: '#016589',
       confirmButtonText: 'Entendido'
     });
-    mostrarMensaje('Este comprobante ya fue reportado anteriormente (Ref. ' + respuesta.referencia + ').', 'error');
+    mostrarMensaje('Estos comprobantes ya fueron reportados anteriormente (Ref. ' + respuesta.referencia + ').', 'error');
     return;
   }
 
@@ -642,16 +663,24 @@
     toggleMontoField();
     toggleVendedorField();
     toggleRifField();
-    mostrarMensaje('¡Pago reportado con éxito! Hemos guardado tu comprobante.', 'exito');
+
+    const dups = respuesta.duplicados || [];
+    if (dups.length > 0) {
+      Swal.fire({
+        icon: 'info',
+        title: 'Pago reportado parcialmente',
+        html: 'Se guardaron <b>' + respuesta.guardados + '</b> de ' + respuesta.total + ' comprobantes.<br><br>' +
+              'Se omitieron por estar duplicados (Ref.): ' + dups.join(', '),
+        confirmButtonColor: '#016589',
+        confirmButtonText: 'Entendido'
+      });
+    }
+    const n = respuesta.guardados || 1;
+    mostrarMensaje('¡Pago reportado con éxito! Hemos guardado ' + n + (n === 1 ? ' comprobante.' : ' comprobantes.'), 'exito');
   } else {
     mostrarMensaje('Ocurrió un error al guardar: ' + respuesta.error, 'error');
   }
 }
-
-  function onError(error){
-    setCargando(false);
-    mostrarMensaje('Hubo un problema de conexión. Intenta nuevamente.', 'error');
-  }
 </script>
 </body>
 </html>
