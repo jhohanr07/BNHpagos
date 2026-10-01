@@ -8,7 +8,7 @@
  */
 (function () {
   // Pega aquí la URL de tu implementación de Apps Script (termina en /exec)
-  var GAS_URL = 'https://script.google.com/macros/s/AKfycbwrzEB2qlm4Rx2tdygLYqPvETODIhSFMe8PvGGBM4Z6Cebi4HHtHS06K-gJQPy4a9cX/exec';
+  var GAS_URL = 'https://script.google.com/macros/s/AKfycbzwvbdUdnrOddo6GIN_aeyrwMq_X5rsmuLs9hSRjquY6djc2zcINfcNv25gtRth7Bc/exec';
 
   function obtenerPin(fn) {
     var pin = sessionStorage.getItem('bnh_pin') || '';
