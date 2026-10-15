@@ -1220,10 +1220,8 @@ function extraerReferencia(texto) {
     // Patrón típico de sello de cajero, ej. "CA1983", "CA2190" (2 letras + 3-4
     // dígitos cortos, normalmente pegado a "C.I. del Depositante")
     if (/^[A-Z]{2}\d{3,4}$/i.test(v)) return true;
-    // FIX: los números de cuenta venezolanos tienen exactamente 20 dígitos.
-    // Antes se rechazaba cualquier número de 16+ dígitos, lo que también
-    // descartaba IDs de orden de Binance (18-19 dígitos) que SÍ son
-    // referencias válidas. Solo se descartan los de 20 dígitos o más.
+    // Los números de cuenta venezolanos tienen exactamente 20 dígitos.
+    // Solo se descartan los de 20 dígitos o más (los IDs de Binance de 18-19 sí valen).
     if (/^\d{20,}$/.test(v)) return true;
     return false;
   };
@@ -1233,8 +1231,6 @@ function extraerReferencia(texto) {
 
   const limpiar = (v) => v.replace(/[^A-Z0-9]/gi, '');
   const BINANCE_REGEX = /\b\d{18}\b/;
-  // FIX: variante amplia para capturar IDs de Binance de 17-19 dígitos
-  // cuando no viene precedido por la etiqueta "ID DE ORDEN" (ver PASO 0b).
   const BINANCE_REGEX_AMPLIO = /\b\d{17,19}\b/;
 
   // --- PASO 0: patrones bancarios inconfundibles primero ---
@@ -1242,10 +1238,7 @@ function extraerReferencia(texto) {
   const matchConocido = texto.match(PATRONES_CONOCIDOS);
   if (matchConocido) return limpiar(matchConocido[0]);
 
-  // --- PASO 0b: comprobantes tipo Binance sin etiqueta visible de
-  // "ID DE ORDEN" (p. ej. pantallas de "Añadir alias" / "Cuenta de fondos").
-  // Si aparece contexto claro de Binance y un número largo de 17-19 dígitos
-  // que NO esté en una línea prohibida, se toma como referencia.
+  // --- PASO 0b: comprobantes tipo Binance sin etiqueta visible de "ID DE ORDEN" ---
   const CONTEXTO_BINANCE = /CUENTA DE FONDOS|A[ÑN]ADIR ALIAS|USDT|BINANCE/i;
   if (CONTEXTO_BINANCE.test(texto)) {
     for (const l of lineas) {
@@ -1253,6 +1246,71 @@ function extraerReferencia(texto) {
       const m = l.texto.match(BINANCE_REGEX_AMPLIO);
       if (m) return m[0];
     }
+  }
+
+  // --- PASO 0c (NUEVO): BNC "Nota de operación ejecutada" ---
+  // La referencia viene al final como "Ref.N°. 227837 Edo.Cta." (no al inicio
+  // de línea), por eso la etiqueta normal no la detecta. El \s* también cubre
+  // el caso en que el OCR deje el número en la línea siguiente.
+  const BNC_REF_REGEX = /\bREF\.?\s*N\s*[°º˚oO0]?\s*\.?\s*:?\s*(\d{4,12})\b/i;
+  const mBnc = texto.match(BNC_REF_REGEX);
+  if (mBnc && !esInvalido(mBnc[1])) return mBnc[1];
+
+  // --- PASO 0d (NUEVO): Bancamiga "Depósito Moneda Extranjera" ---
+  // Referencia de 9-11 dígitos (ej. 1840139077). La marca de agua
+  // "www.bancamiga.com" se superpone al número y el OCR mezcla líneas
+  // (sobre todo si la foto está volteada), así que se limpia la marca de agua
+  // y se busca el número cerca de la palabra "Referencia" y, si no, en todo el comprobante.
+  const ES_BANCAMIGA = /BANCAMIG|MONEDA\s*EXTRANJERA|NOMBRE\s*DE\s*LA\s*TRANSACCI[OÓ]N/i;
+  if (ES_BANCAMIGA.test(texto)) {
+    // Líneas que nunca aportan referencia (la marca de agua NO cuenta aquí,
+    // porque justamente ensucia la línea que sí tiene la referencia)
+    const LINEA_NO_UTIL_BCM = /C\.?\s*I\.?\s*DEL\s*DEPOSIT|DEPOSITANTE|FIRMA|SELLO\s*DEL\s*CAJERO|CAJERO|^CAJA\b|TITULAR|TUBANCA|^0500\b|N[UÚ]MERO\s*DE\s*CUENTA/i;
+
+    const limpiarMarcaAgua = (s) => s
+      .replace(/(?:W{2,3}\.?)?\s*BANCAMIGA\s*\.?\s*(?:COM)?/gi, ' ')
+      .replace(/\bW{3}\b\.?/gi, ' ')
+      .replace(/(?<=\d)\.?COM\b/gi, ' ')
+      .replace(/\.COM\b/gi, ' ');
+
+    const validoBcm = (v) =>
+      /^\d{9,11}$/.test(v) && !/^0500/.test(v) && !/^0172/.test(v) && !esInvalido(v);
+
+    const buscarEnTexto = (s, permitirGrupos) => {
+      const t = limpiarMarcaAgua(s);
+      const tokens = t.match(/\b\d{9,11}\b/g) || [];
+      for (const tk of tokens) if (validoBcm(tk)) return tk;
+      if (permitirGrupos) {
+        // El OCR a veces parte el número en 2-3 grupos (ej. "7020 781025")
+        const grupos = t.match(/\d{2,8}(?:[ \-]\d{2,8}){1,2}/g) || [];
+        for (const g of grupos) {
+          const j = g.replace(/\D/g, '');
+          if (validoBcm(j)) return j;
+        }
+      }
+      return null;
+    };
+
+    // (a) Alrededor de la etiqueta "Referencia" (línea anterior, propia y 2 siguientes)
+    for (let i = 0; i < lineasRaw.length; i++) {
+      if (!/REFEREN/i.test(lineasRaw[i])) continue;
+      if (/N[UÚ]MERO\s*DE\s*CUENTA/i.test(lineasRaw[i])) continue;
+      const ventana = lineasRaw
+        .slice(Math.max(0, i - 1), i + 3)
+        .filter(l => !LINEA_NO_UTIL_BCM.test(l) || /REFEREN/i.test(l))
+        .join(' ');
+      const r = buscarEnTexto(ventana, true);
+      if (r) return r;
+    }
+
+    // (b) Respaldo: cualquier línea útil del comprobante (por si el OCR
+    // separó la etiqueta del número por la rotación)
+    for (const l of lineasRaw) {
+      if (LINEA_NO_UTIL_BCM.test(l)) continue;
+      const r = buscarEnTexto(l, false);
+      if (r) return r;
+    }
+    // Si no se encontró, se continúa con el PASO 1 y 2 de siempre
   }
 
   // --- PASO 1: búsqueda por etiqueta ---
@@ -1276,8 +1334,7 @@ function extraerReferencia(texto) {
     if (!m) continue;
 
     // Si la propia línea de la etiqueta viene con señales de marca de agua
-    // superpuesta, se descarta esta ocurrencia por completo (sin inventar
-    // nada) y se sigue buscando otra aparición limpia de "Referencia".
+    // superpuesta, se descarta esta ocurrencia y se sigue buscando.
     const LINEA_CORRUPTA = /WWW\.|\.COM|@/i;
     if (LINEA_CORRUPTA.test(l)) continue;
 
@@ -1318,56 +1375,6 @@ function extraerReferencia(texto) {
     }
   }
   return 'No encontrada';
-}
-
-
-/* ============================================================================
- * FUNCIONES DE EXTRACCIÓN DE SERIALES DE BILLETES (CASO A: EFECTIVO)
- * ========================================================================== */
-
-
-function extraerSerialesDeBilletes(texto) {
-  if (!texto) return [];
-
-  // Colapsa espacios/tabs (no saltos de línea) para no unir seriales de renglones distintos
-  const textoLimpio = texto.replace(/[^\S\n]+/g, ' ');
-
-  // Letra de Banco de la Reserva Federal: siempre es la última letra del prefijo
-  const LETRAS_BANCO = 'ABCDEFGHIJKL';
-
-  // Texto de denominación que jamás debe tratarse como serial
-  const DENOMINACIONES_TEXTO = /^(ONE|TWO|FIVE|TEN|TWENTY|FIFTY|HUNDRED|DOLLAR|DOLLARS)$/i;
-
-  // Permite hasta 2 espacios entre prefijo/dígitos/sufijo: el OCR de Vision
-  // frecuentemente "rompe" el serial en 2-3 tokens (ej. "IC 23917378 A")
-  const REGEX_SERIAL = /\b([A-Z]{1,2})\s{0,2}(\d{7,8})\s{0,2}([A-Z])?\b/g;
-
-  const esSerialValido = (prefijo, digitos, sufijo) => {
-    if (digitos.length < 7) return false;
-    const letraBanco = prefijo[prefijo.length - 1];
-    if (LETRAS_BANCO.indexOf(letraBanco) === -1) return false;
-    if (DENOMINACIONES_TEXTO.test(prefijo + digitos + (sufijo || ''))) return false;
-    // Descarta placeholders obvios (todos los dígitos iguales, ej. "00000000")
-    if (/^(\d)\1+$/.test(digitos)) return false;
-    return true;
-  };
-
-  const vistos = new Set();
-  const resultado = [];
-  let match;
-
-  while ((match = REGEX_SERIAL.exec(textoLimpio)) !== null) {
-    const [, prefijo, digitos, sufijo] = match;
-    if (!esSerialValido(prefijo, digitos, sufijo)) continue;
-
-    const candidato = (prefijo + digitos + (sufijo || '')).toUpperCase();
-    if (!vistos.has(candidato)) {
-      vistos.add(candidato);
-      resultado.push(candidato);
-    }
-  }
-
-  return resultado;
 }
 /* ============================================================================
  * FUNCIONES DE EXTRACCIÓN MONTO
