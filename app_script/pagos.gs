@@ -1581,7 +1581,7 @@ const MAX_TEXTO_FALLO = 45000;
 // IA (opcional): la API key de Gemini se lee de la hoja OCR_REGLAS, celda A1.
 // Modelo por defecto editable con la propiedad de script GEMINI_MODEL.
 const IA_ACTIVADA = SI;
-const IA_MODELO_DEFECTO = 'gemini-2.5-pro';
+const IA_MODELO_DEFECTO = 'gemini-3.8-flash';
 const CELDA_API_KEY = 'K1';
 // false = las reglas propuestas por la IA se guardan con ACTIVA = NO
 // y tú las apruebas cambiando la celda a SI.
