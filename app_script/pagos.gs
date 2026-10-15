@@ -583,15 +583,25 @@ function procesarOCRFila(hoja, fila) {
     // La Referencia se busca primero "por posición" (usando las coordenadas
     // de cada palabra que ya devuelve Cloud Vision), y solo si eso no da
     // resultado se recurre al método original por texto plano.
-    const referenciaDetectada = extraerReferenciaRobusta(datosOCR);
-    const montoDetectado = extraerMonto(textoExtraido);
-
-    // Si el tipo de pago es "Efectivo" o "Bs", el Beneficiario se toma
-    // directamente de la columna F (Titular) en lugar de calcularlo con
-    // extraerBeneficiario() sobre el texto OCR.
-    const beneficiarioDetectado = debeUsarTitularComoBeneficiario(tipoPagoUpper)
+    let referenciaDetectada = extraerReferenciaRobusta(datosOCR);
+    let montoDetectado = extraerMonto(textoExtraido);
+    let beneficiarioDetectado = debeUsarTitularComoBeneficiario(tipoPagoUpper)
       ? (hoja.getRange(fila, COL_TITULAR).getValue() || 'No encontrado')
       : extraerBeneficiario(textoExtraido);
+
+    // NUEVO: aprendizaje inteligente (fail-open: si algo falla, el flujo sigue igual)
+    try {
+      const completado = aprenderYCompletar_(
+        hoja, fila, textoExtraido,
+        { referencia: referenciaDetectada, monto: montoDetectado, beneficiario: beneficiarioDetectado },
+        { beneficiario: debeUsarTitularComoBeneficiario(tipoPagoUpper) }
+      );
+      referenciaDetectada = completado.referencia;
+      montoDetectado = completado.monto;
+      beneficiarioDetectado = completado.beneficiario;
+    } catch (errAprende) {
+      console.error('⚠️ Aprendizaje OCR (fail-open): ' + errAprende.message);
+    }
 
     hoja.getRange(fila, COL_REFERENCIA).setValue(referenciaDetectada);
     hoja.getRange(fila, COL_MONTO).setValue(montoDetectado);
@@ -1494,7 +1504,7 @@ function extraerBeneficiario(texto) {
  * ========================================================================== */
 
 function pruebaManualPorFila() {
-  const FILA_DE_PRUEBA = 53; // ajusta la fila a probar
+  const FILA_DE_PRUEBA = 788; // ajusta la fila a probar
   const hoja = SpreadsheetApp.openById(SHEET_ID).getSheetByName(NOMBRE_HOJA);
   procesarOCRFila(hoja, FILA_DE_PRUEBA);
 }
@@ -1550,4 +1560,495 @@ function jsonOut_(obj) {
 function pinValido_(pin) {
   const esperado = PropertiesService.getScriptProperties().getProperty('ADMIN_PIN') || 'BNH2025';
   return String(pin || '').trim() === esperado;
+}
+
+
+
+
+
+/* ============================================================================
+ * APRENDIZAJE INTELIGENTE DEL OCR
+ * Hojas: OCR_FALLOS (casos no leídos / correcciones) y OCR_REGLAS (reglas aprendidas)
+ * ========================================================================== */
+
+const HOJA_OCR_FALLOS = 'OCR_FALLOS';
+const HOJA_OCR_REGLAS = 'OCR_REGLAS';
+const CAMPOS_APRENDIZAJE = ['REFERENCIA', 'MONTO', 'BENEFICIARIO'];
+const CLAVE_CACHE_REGLAS = 'OCR_REGLAS_V1';
+const CACHE_REGLAS_SEG = 600;
+const MAX_TEXTO_FALLO = 45000;
+
+// IA (opcional): la API key de Gemini se lee de la hoja OCR_REGLAS, celda A1.
+// Modelo por defecto editable con la propiedad de script GEMINI_MODEL.
+const IA_ACTIVADA = true;
+const IA_MODELO_DEFECTO = 'gemini-1.5-pro';
+const CELDA_API_KEY = 'K1';
+// false = las reglas propuestas por la IA se guardan con ACTIVA = NO
+// y tú las apruebas cambiando la celda a SI.
+const ACTIVAR_REGLAS_IA_AUTOMATICO = true;
+
+const ENC_FALLOS = ['FECHA', 'FILA PAGOS', 'CAMPO', 'HUELLA', 'COMPROBANTE', 'TEXTO OCR', 'VALOR CORRECTO', 'ESTADO', 'NOTAS'];
+const ENC_REGLAS = ['CAMPO', 'HUELLA (regex)', 'REGEX DE EXTRACCION', 'ACTIVA', 'ORIGEN', 'FECHA', 'ACIERTOS', 'EJEMPLO'];
+
+// Pistas para identificar el "tipo de comprobante" (de lo más a lo menos específico)
+const HUELLAS_COMPROBANTE = [
+  'NOTA\\s*DE\\s*OPERACI', 'BANCO\\s*NACIONAL\\s*DE\\s*CR', '\\bBNC\\b', 'BANCAMIGA', 'BANESCO',
+  'MERCANTIL', 'PROVINCIAL', 'BBVA', 'BANCO\\s*DE\\s*VENEZUELA', 'BANPLUS', 'BANCO\\s*EXTERIOR',
+  'BICENTENARIO', 'BANCO\\s*DEL\\s*TESORO', 'ZELLE', 'BINANCE', 'BANK\\s*OF\\s*AMERICA',
+  'CHASE', 'WELLS\\s*FARGO', 'PAGO\\s*M[OÓ]VIL'
+];
+
+/* ------------------------------- INSTALACIÓN ------------------------------- */
+
+/** Ejecutar UNA vez desde el editor: crea las hojas y el disparador horario. */
+function instalarAprendizaje() {
+  hojaAprendizaje_(HOJA_OCR_FALLOS, ENC_FALLOS);
+  hojaAprendizaje_(HOJA_OCR_REGLAS, ENC_REGLAS);
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'aprenderDeCorrecciones')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('aprenderDeCorrecciones').timeBased().everyHours(1).create();
+  console.log('✅ Aprendizaje instalado: hojas creadas y disparador horario activo.');
+}
+
+function hojaAprendizaje_(nombre, encabezados) {
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  let h = ss.getSheetByName(nombre);
+  if (!h) {
+    h = ss.insertSheet(nombre);
+    h.getRange(1, 1, 1, encabezados.length).setValues([encabezados])
+      .setFontWeight('bold').setBackground('#0b3d91').setFontColor('#ffffff');
+    h.setFrozenRows(1);
+  }
+  return h;
+}
+
+/* ------------------------- ORQUESTADOR (lo llama el OCR) ------------------------- */
+
+/**
+ * Completa los campos que el OCR normal no pudo leer.
+ * Orden: reglas aprendidas -> IA (si hay API key) -> registro para corrección humana.
+ * @param {Sheet} hoja Hoja PAGOS
+ * @param {number} fila Fila procesada
+ * @param {string} texto Texto OCR completo
+ * @param {{referencia:*, monto:*, beneficiario:*}} valores Lo que leyó el OCR normal
+ * @param {{referencia?:boolean, monto?:boolean, beneficiario?:boolean}} [omitir] Campos a no tocar
+ * @return {{referencia:*, monto:*, beneficiario:*}}
+ */
+function aprenderYCompletar_(hoja, fila, texto, valores, omitir) {
+  const mapa = { REFERENCIA: 'referencia', MONTO: 'monto', BENEFICIARIO: 'beneficiario' };
+  const omit = omitir || {};
+  const resultado = { referencia: valores.referencia, monto: valores.monto, beneficiario: valores.beneficiario };
+  const faltantes = () => CAMPOS_APRENDIZAJE.filter(c => !omit[mapa[c]] && esFallo_(c, resultado[mapa[c]]));
+
+  let pendientes = faltantes();
+  if (pendientes.length === 0) return resultado;
+  if (!texto || /^(ERROR OCR|NO SE DETECT[OÓ] TEXTO)$/i.test(String(texto).trim())) return resultado;
+
+  const url = String(hoja.getRange(fila, COL_ARCHIVO).getValue() || '');
+
+  // 1) Reglas aprendidas
+  pendientes.forEach(c => {
+    const v = aplicarReglasAprendidas_(c, texto);
+    if (v) {
+      resultado[mapa[c]] = v;
+      console.log('🧠 ' + c + ' resuelto por regla aprendida: ' + v);
+    }
+  });
+  pendientes = faltantes();
+  if (pendientes.length === 0) return resultado;
+
+  // 2) IA (opcional)
+  const deIA = consultarIA_(texto, pendientes);
+  pendientes.forEach(c => {
+    const v = deIA[c];
+    if (!v) return;
+    resultado[mapa[c]] = v;
+    const g = generarRegla_(c, texto, v);
+    if (g.ok) {
+      registrarRegla_(c, g.huella, g.regex, 'IA', ACTIVAR_REGLAS_IA_AUTOMATICO ? 'SI' : 'NO', v);
+    }
+    registrarFallo_(fila, c, texto, url, 'RESUELTO_IA', v,
+      g.ok ? 'Regla propuesta en OCR_REGLAS' : ('Sin regla: ' + g.motivo));
+    console.log('🤖 ' + c + ' resuelto por IA: ' + v);
+  });
+  pendientes = faltantes();
+
+  // 3) Lo que sigue sin leerse queda para corrección humana
+  pendientes.forEach(c => registrarFallo_(fila, c, texto, url, 'PENDIENTE', '', ''));
+  return resultado;
+}
+
+/* ----------------------------- DETECCIÓN DE FALLOS ----------------------------- */
+
+function esFallo_(campo, valor) {
+  const v = String(valor === null || valor === undefined ? '' : valor).trim().toUpperCase();
+  if (!v) return true;
+  if (campo === 'REFERENCIA') return VALORES_REFERENCIA_IGNORADOS.has(v);
+  if (campo === 'MONTO') {
+    return ['NO ENCONTRADO', 'NO ENCONTRADA', 'NO DETECTADO', 'ERROR AL LEER MONTO', '0'].indexOf(v) !== -1;
+  }
+  return ['NO ENCONTRADO', 'NO ENCONTRADA', 'NO DETECTADO'].indexOf(v) !== -1;
+}
+
+function registrarFallo_(fila, campo, texto, url, estado, valor, notas) {
+  const h = hojaAprendizaje_(HOJA_OCR_FALLOS, ENC_FALLOS);
+  h.appendRow([
+    new Date(), fila, campo, calcularHuella_(texto), textoSeguro_(url),
+    textoSeguro_(String(texto).substring(0, MAX_TEXTO_FALLO)),
+    textoSeguro_(valor || ''), estado, textoSeguro_(notas || '')
+  ]);
+}
+
+/** Evita que Sheets interprete como fórmula un texto que empiece con = + - @ */
+function textoSeguro_(s) {
+  const t = String(s === null || s === undefined ? '' : s);
+  return /^[=+\-@]/.test(t) ? "'" + t : t;
+}
+
+function calcularHuella_(texto) {
+  for (const patron of HUELLAS_COMPROBANTE) {
+    if (new RegExp(patron, 'i').test(texto)) return patron;
+  }
+  return '';
+}
+
+/* ------------------------------ REGLAS APRENDIDAS ------------------------------ */
+
+function cargarReglas_() {
+  const cache = CacheService.getScriptCache();
+  const enCache = cache.get(CLAVE_CACHE_REGLAS);
+  if (enCache) {
+    try { return JSON.parse(enCache); } catch (e) { /* se recarga abajo */ }
+  }
+  const h = hojaAprendizaje_(HOJA_OCR_REGLAS, ENC_REGLAS);
+  const ultima = h.getLastRow();
+  let reglas = [];
+  if (ultima >= 2) {
+    reglas = h.getRange(2, 1, ultima - 1, ENC_REGLAS.length).getValues()
+      .map((r, i) => ({
+        fila: i + 2,
+        campo: String(r[0]).trim().toUpperCase(),
+        huella: String(r[1] || '').trim(),
+        regex: String(r[2] || '').trim(),
+        activa: String(r[3]).trim().toUpperCase() === 'SI'
+      }))
+      .filter(r => r.activa && r.regex && CAMPOS_APRENDIZAJE.indexOf(r.campo) !== -1);
+  }
+  cache.put(CLAVE_CACHE_REGLAS, JSON.stringify(reglas), CACHE_REGLAS_SEG);
+  return reglas;
+}
+
+function aplicarReglasAprendidas_(campo, texto) {
+  const reglas = cargarReglas_().filter(r => r.campo === campo);
+  for (const r of reglas) {
+    try {
+      if (r.huella && !new RegExp(r.huella, 'i').test(texto)) continue;
+      const m = new RegExp(r.regex, 'i').exec(texto);
+      if (!m || !m[1]) continue;
+      const valor = limpiarValorAprendido_(campo, m[1]);
+      if (!valor || esFallo_(campo, valor)) continue;
+      sumarAcierto_(r.fila);
+      return valor;
+    } catch (err) {
+      console.error('⚠️ Regla inválida en fila ' + r.fila + ' de ' + HOJA_OCR_REGLAS + ': ' + err.message);
+    }
+  }
+  return null;
+}
+
+function limpiarValorAprendido_(campo, crudo) {
+  const v = String(crudo || '').trim();
+  if (campo === 'REFERENCIA') {
+    const limpio = v.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    return (limpio.length >= 4 && limpio.length <= 24 && /\d/.test(limpio)) ? limpio : null;
+  }
+  if (campo === 'MONTO') return /\d/.test(v) ? v : null;
+  const nombre = v.replace(/\s+/g, ' ').replace(/[.:,\-\s]+$/, '').trim();
+  return nombre.length >= 3 ? nombre : null;
+}
+
+function sumarAcierto_(filaRegla) {
+  try {
+    const celda = hojaAprendizaje_(HOJA_OCR_REGLAS, ENC_REGLAS).getRange(filaRegla, 7);
+    celda.setValue((Number(celda.getValue()) || 0) + 1);
+  } catch (e) { /* el contador es informativo, nunca debe interrumpir */ }
+}
+
+function registrarRegla_(campo, huella, regex, origen, activa, ejemplo) {
+  const h = hojaAprendizaje_(HOJA_OCR_REGLAS, ENC_REGLAS);
+  const ultima = h.getLastRow();
+  if (ultima >= 2) {
+    const existentes = h.getRange(2, 1, ultima - 1, 3).getValues();
+    const repetida = existentes.some(r =>
+      String(r[0]).trim().toUpperCase() === campo && String(r[1]) === huella && String(r[2]) === regex);
+    if (repetida) return false;
+  }
+  h.appendRow([campo, huella, regex, activa, origen, new Date(), 0, textoSeguro_(ejemplo)]);
+  CacheService.getScriptCache().remove(CLAVE_CACHE_REGLAS);
+  return true;
+}
+
+/* ------------------- GENERACIÓN DE REGLAS (el "aprendizaje") ------------------- */
+
+/**
+ * A partir de un texto OCR y el valor correcto, deduce una regla
+ * "ETIQUETA + valor" y la VALIDA contra ese mismo texto antes de aceptarla.
+ * @return {{ok:boolean, regex?:string, huella?:string, motivo?:string}}
+ */
+function generarRegla_(campo, texto, valorCorrecto) {
+  const valor = String(valorCorrecto || '').trim();
+  if (!valor || !texto) return { ok: false, motivo: 'Falta el valor o el texto OCR.' };
+
+  const loc = localizarValor_(campo, texto, valor);
+  if (!loc) {
+    return { ok: false, motivo: 'El valor correcto no aparece en el texto que leyó el OCR (la imagen no se leyó bien).' };
+  }
+
+  const inicioLinea = loc.index === 0 ? 0 : texto.lastIndexOf('\n', loc.index - 1) + 1;
+  const antes = texto.substring(inicioLinea, loc.index);
+  const patronValor = patronDeValor_(campo, valor);
+  const prefijoMoneda = campo === 'MONTO' ? '(?:US\\$|\\$|USD|VEB|VES|BS\\.?)?[ \\t]*' : '';
+  const candidatos = [];
+
+  const etiquetaMisma = extraerEtiqueta_(antes);
+  if (etiquetaMisma) {
+    candidatos.push(etiquetaMisma + '[ \\t]*[:#\\-]?[ \\t]*' + prefijoMoneda + '(' + patronValor + ')');
+  }
+
+  const previas = texto.substring(0, Math.max(inicioLinea - 1, 0))
+    .split('\n').map(l => l.trim()).filter(Boolean);
+  const etiquetaPrevia = previas.length ? extraerEtiqueta_(previas[previas.length - 1]) : '';
+  if (etiquetaPrevia) {
+    candidatos.push(etiquetaPrevia + '[ \\t]*:?[ \\t]*\\n[ \\t]*' + prefijoMoneda + '(' + patronValor + ')');
+  }
+
+  for (const regex of candidatos) {
+    try {
+      const m = new RegExp(regex, 'i').exec(texto);
+      if (m && m[1] && sonMismoValor_(campo, m[1], valor)) {
+        return { ok: true, regex: regex, huella: calcularHuella_(texto) };
+      }
+    } catch (e) { /* candidato inválido: se prueba el siguiente */ }
+  }
+  return { ok: false, motivo: 'No se encontró una etiqueta estable junto al valor para generalizar la regla.' };
+}
+
+function localizarValor_(campo, texto, valor) {
+  const directo = texto.toUpperCase().indexOf(valor.toUpperCase());
+  if (directo !== -1) return { index: directo, length: valor.length };
+
+  let patron;
+  if (campo === 'MONTO') {
+    const digitos = valor.replace(/\D/g, '');
+    if (!digitos) return null;
+    patron = digitos.split('').join('[.,\\s]?');
+  } else if (campo === 'REFERENCIA') {
+    const limpio = valor.replace(/[^A-Z0-9]/gi, '');
+    if (limpio.length < 4) return null;
+    patron = limpio.split('').join('[\\s\\-]?');
+  } else {
+    patron = valor.trim().split(/\s+/).map(escaparRegex_).join('\\s+');
+  }
+  const m = new RegExp(patron, 'i').exec(texto);
+  return m ? { index: m.index, length: m[0].length } : null;
+}
+
+function patronDeValor_(campo, valor) {
+  if (campo === 'MONTO') {
+    return '\\d{1,3}(?:[.,]\\d{3})*(?:[.,]\\d{1,2})?|\\d+(?:[.,]\\d{1,2})?';
+  }
+  if (campo === 'REFERENCIA') {
+    const limpio = valor.replace(/[^A-Z0-9]/gi, '');
+    const min = Math.max(4, limpio.length - 2);
+    const max = Math.min(24, limpio.length + 3);
+    return (/^\d+$/.test(limpio) ? '\\d' : '[A-Z0-9]') + '{' + min + ',' + max + '}';
+  }
+  return "[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ.,&' \\t-]{2,80}";
+}
+
+/** Toma las últimas palabras antes del valor como "etiqueta" del campo. */
+function extraerEtiqueta_(antes) {
+  let e = String(antes || '').replace(/[:\-#\s$]+$/, '').trim();
+  if (!/[A-Za-zÁÉÍÓÚáéíóúÑñ]{3,}/.test(e)) return '';
+  const palabras = e.split(/\s+/).slice(-4);
+  while (palabras.join(' ').length > 40 && palabras.length > 1) palabras.shift();
+  e = palabras.join(' ');
+  return escaparRegex_(e).replace(/\s+/g, '[ \\t]+');
+}
+
+function escaparRegex_(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\\/\-]/g, '\\$&');
+}
+
+function montoANumero_(s) {
+  const t = String(s).replace(/[^\d.,]/g, '');
+  if (!t) return NaN;
+  const ultPunto = t.lastIndexOf('.');
+  const ultComa = t.lastIndexOf(',');
+  const sepDec = Math.max(ultPunto, ultComa);
+  if (sepDec === -1) return Number(t);
+  const decimales = t.length - sepDec - 1;
+  const hayAmbos = ultPunto !== -1 && ultComa !== -1;
+  if (hayAmbos || decimales <= 2) {
+    return Number(t.slice(0, sepDec).replace(/[.,]/g, '') + '.' + t.slice(sepDec + 1));
+  }
+  return Number(t.replace(/[.,]/g, ''));
+}
+
+function sonMismoValor_(campo, a, b) {
+  if (campo === 'MONTO') {
+    const na = montoANumero_(a), nb = montoANumero_(b);
+    return !isNaN(na) && !isNaN(nb) && Math.abs(na - nb) < 0.005;
+  }
+  if (campo === 'REFERENCIA') {
+    return String(a).replace(/[^A-Z0-9]/gi, '').toUpperCase() === String(b).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+  }
+  const norm = s => String(s).replace(/\s+/g, ' ').replace(/[.:,\-\s]+$/, '').trim().toUpperCase();
+  return norm(a) === norm(b);
+}
+
+/* -------------------- APRENDER DE TUS CORRECCIONES (disparador) -------------------- */
+
+/**
+ * Procesa las filas de OCR_FALLOS con ESTADO = PENDIENTE y VALOR CORRECTO escrito:
+ * corrige la celda en PAGOS y genera/valida la regla. Corre cada hora o a mano.
+ */
+function aprenderDeCorrecciones() {
+  const h = hojaAprendizaje_(HOJA_OCR_FALLOS, ENC_FALLOS);
+  const ultima = h.getLastRow();
+  if (ultima < 2) return;
+
+  const hojaPagos = SpreadsheetApp.openById(SHEET_ID).getSheetByName(NOMBRE_HOJA);
+  const datos = h.getRange(2, 1, ultima - 1, ENC_FALLOS.length).getValues();
+  const colPorCampo = { REFERENCIA: COL_REFERENCIA, MONTO: COL_MONTO, BENEFICIARIO: COL_BENEFICIARIO };
+  let aprendidas = 0;
+
+  datos.forEach((r, i) => {
+    const estado = String(r[7]).trim().toUpperCase();
+    const corregido = String(r[6]).trim();
+    if (estado !== 'PENDIENTE' || !corregido) return;
+
+    const filaFallos = i + 2;
+    const campo = String(r[2]).trim().toUpperCase();
+    if (!colPorCampo[campo]) return;
+
+    const notas = [];
+
+    // 1) Corregir la fila en PAGOS (se ubica por URL del comprobante, no por nº de fila,
+    //    porque los duplicados borrados desplazan las filas).
+    const filaPagos = buscarFilaPorUrl_(hojaPagos, String(r[4]));
+    if (filaPagos) {
+      hojaPagos.getRange(filaPagos, colPorCampo[campo]).setValue(corregido);
+      notas.push('PAGOS fila ' + filaPagos + ' corregida.');
+    } else {
+      notas.push('No se halló el comprobante en PAGOS (¿fila eliminada?).');
+    }
+
+    // 2) Aprender la regla
+    const g = generarRegla_(campo, String(r[5]), corregido);
+    let nuevoEstado = 'NO_APRENDIDO';
+    if (g.ok) {
+      const creada = registrarRegla_(campo, g.huella, g.regex, 'HUMANO', 'SI', corregido);
+      nuevoEstado = 'APRENDIDO';
+      notas.push(creada ? 'Regla nueva activa.' : 'La regla ya existía.');
+      aprendidas++;
+    } else {
+      notas.push(g.motivo);
+    }
+    h.getRange(filaFallos, 8, 1, 2).setValues([[nuevoEstado, notas.join(' ')]]);
+  });
+
+  if (aprendidas > 0) CacheService.getScriptCache().remove(CLAVE_CACHE_REGLAS);
+  console.log('🧠 Reglas nuevas aprendidas: ' + aprendidas);
+}
+
+function buscarFilaPorUrl_(hoja, url) {
+  if (!url) return 0;
+  const ultima = hoja.getLastRow();
+  if (ultima < 2) return 0;
+  const hallada = hoja.getRange(2, COL_ARCHIVO, ultima - 1, 1)
+    .createTextFinder(url).matchEntireCell(true).findNext();
+  return hallada ? hallada.getRow() : 0;
+}
+
+/* ------------------------------ IA (Gemini) ------------------------------ */
+
+/** Lee la API key de OCR_REGLAS!A1. Devuelve '' si no hay una key válida. */
+function leerApiKeyIA_() {
+  try {
+    const hoja = SpreadsheetApp.openById(SHEET_ID).getSheetByName(HOJA_OCR_REGLAS);
+    if (!hoja) return '';
+    const valor = String(hoja.getRange(CELDA_API_KEY).getValue() || '').trim();
+    // Si A1 todavía tiene el encabezado original, no es una key
+    return (valor && valor.toUpperCase() !== 'CAMPO') ? valor : '';
+  } catch (e) {
+    console.error('⚠️ No se pudo leer la API key en ' + HOJA_OCR_REGLAS + '!' + CELDA_API_KEY + ': ' + e.message);
+    return '';
+  }
+}
+
+/**
+ * Pide a Gemini que lea los campos faltantes del texto OCR.
+ * Cada valor devuelto se VERIFICA contra el texto original; si no aparece, se descarta.
+ * @return {Object} p. ej. { REFERENCIA: '227837', MONTO: '263,040.00' }
+ */
+function consultarIA_(texto, campos) {
+  const apiKey = leerApiKeyIA_();
+  if (!IA_ACTIVADA || !apiKey || !campos.length) return {};
+
+  const modelo = PropertiesService.getScriptProperties().getProperty('GEMINI_MODEL') || IA_MODELO_DEFECTO;
+  const instruccion =
+    'Este es el texto OCR de un comprobante de pago (puede venir desordenado, volteado o con marcas de agua).\n' +
+    'Extrae SOLO estos campos: ' + campos.join(', ') + '.\n' +
+    'Reglas: copia cada valor EXACTAMENTE como aparece en el texto; si no estás seguro, usa null; no inventes.\n' +
+    '- REFERENCIA: número de referencia, confirmación u operación (NO cuentas de 20 dígitos, teléfonos, cédulas ni RIF).\n' +
+    '- MONTO: importe de la operación, con su moneda o símbolo si aparece.\n' +
+    '- BENEFICIARIO: persona o empresa que recibe el pago.\n' +
+    'Responde SOLO un JSON con las claves en mayúsculas, sin explicaciones.\n\n' +
+    'TEXTO OCR:\n' + String(texto).substring(0, 12000);
+
+  try {
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
+      encodeURIComponent(modelo) + ':generateContent';
+    const resp = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'x-goog-api-key': apiKey },
+      payload: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: instruccion }] }],
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 300,
+          responseMimeType: 'application/json'
+        }
+      }),
+      muteHttpExceptions: true
+    });
+    if (resp.getResponseCode() !== 200) {
+      console.error('⚠️ IA respondió ' + resp.getResponseCode() + ': ' + resp.getContentText().substring(0, 300));
+      return {};
+    }
+    const cand = (JSON.parse(resp.getContentText()).candidates || [])[0];
+    const salida = ((cand && cand.content && cand.content.parts) || [])
+      .map(p => p.text || '').join('');
+    const bruto = salida.match(/\{[\s\S]*\}/);
+    if (!bruto) return {};
+    const json = JSON.parse(bruto[0]);
+
+    const verificados = {};
+    campos.forEach(c => {
+      const propuesto = json[c];
+      if (propuesto === null || propuesto === undefined || String(propuesto).trim() === '') return;
+      const loc = localizarValor_(c, texto, String(propuesto).trim());
+      if (!loc) { console.log('⚠️ IA propuso ' + c + ' pero no aparece en el texto. Descartado.'); return; }
+      let valor = texto.substr(loc.index, loc.length).trim();
+      if (c === 'REFERENCIA') valor = valor.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      if (!esFallo_(c, valor)) verificados[c] = valor;
+    });
+    return verificados;
+  } catch (err) {
+    console.error('⚠️ Error consultando la IA (fail-open): ' + err.message);
+    return {};
+  }
 }
