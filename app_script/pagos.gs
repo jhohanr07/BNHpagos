@@ -1382,6 +1382,15 @@ function extraerReferencia(texto) {
 function extraerMonto(texto) {
   const textoLimpio = texto.replace(/\r?\n/g, ' ');
 
+  // NUEVO: BNC "Nota de operación ejecutada". El monto viene en bolívares como
+  // "VEB 263,040.00" (aparece dos veces en la nota). Solo se activa si el texto
+  // es claramente de BNC, para no afectar a los demás comprobantes.
+  const ES_BNC = /NOTA\s*DE\s*OPERACI[OÓ]N|BANCO\s*NACIONAL\s*DE\s*CR[EÉ]DITO|\bBNC\b/i;
+  if (ES_BNC.test(textoLimpio)) {
+    const matchBnc = textoLimpio.match(/\bVEB\s*:?\s*(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})\b/i);
+    if (matchBnc) return matchBnc[1].trim();
+  }
+
   const patronAmericano = /\$\s?\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\$\s?\d+\.\d{2}/;
   const matchAmerik = textoLimpio.match(patronAmericano);
   if (matchAmerik) return matchAmerik[0].trim();
