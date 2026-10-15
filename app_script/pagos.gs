@@ -1666,7 +1666,7 @@ function aprenderYCompletar_(hoja, fila, texto, valores, omitir) {
     resultado[mapa[c]] = v;
     const g = generarRegla_(c, texto, v);
     if (g.ok) {
-      registrarRegla_(c, g.huella, g.regex, 'IA', ACTIVAR_REGLAS_IA_AUTOMATICO ? 'SI' : 'NO', v);
+      registrarRegla_(c, g.huella, g.regex, 'IA', ACTIVAR_REGLAS_IA_AUTOMATICO ? 'true' : 'false', v);
     }
     registrarFallo_(fila, c, texto, url, 'RESUELTO_IA', v,
       g.ok ? 'Regla propuesta en OCR_REGLAS' : ('Sin regla: ' + g.motivo));
