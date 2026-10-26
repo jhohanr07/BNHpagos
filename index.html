@@ -85,6 +85,19 @@
     background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='9'><path d='M1 1l6 6 6-6' stroke='%236c6c6c' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
     background-repeat:no-repeat; background-position:right 14px center; padding-right:36px;
   }
+  /* NUEVO: Comentarios (Servicio Técnico) */
+  textarea{
+    width:100%; padding:12px 14px; font-size:14.5px; font-family:inherit;
+    border:1.5px solid #dde5e8; border-radius:10px; background:#fbfcfd;
+    transition:border-color .15s, box-shadow .15s, background .15s;
+    color:#1f2a30; resize:vertical; min-height:96px;
+  }
+  textarea:focus{
+    outline:none; border-color:var(--green); background:#fff;
+    box-shadow:0 0 0 4px rgba(26,184,149,.14);
+  }
+  .char-counter{ text-align:right; font-size:11.5px; color:var(--gray); margin-top:4px; }
+  .char-counter.limite{ color:var(--danger); font-weight:600; }
   .file-field{
     border:1.5px dashed #cfdadd; border-radius:12px; padding:16px;
     background:var(--gray-light); text-align:center; transition:border-color .15s, background .15s;
@@ -183,7 +196,7 @@
               <option value="Reserva">Reserva</option>
               <option value="Pago IVA">Pago IVA</option>
               <option value="Cuota viva">Cuota viva</option>
-              <option value="Cuota viva">Servicio Tècnico</option>
+              <option value="Servicio Técnico">Servicio Técnico</option>
             </select>
           </div>
           <!-- === FIN === -->
@@ -194,6 +207,15 @@
             <select id="vendedor" name="vendedor">
               <option value="" disabled selected>Selecciona un vendedor</option>
             </select>
+          </div>
+          <!-- === FIN NUEVO === -->
+
+          <!-- === NUEVO: Comentarios, visible solo si Concepto = Servicio Técnico === -->
+          <div class="field" id="comentarioField" style="display:none;">
+            <label for="comentario">Comentarios</label>
+            <textarea id="comentario" name="comentario" maxlength="500"
+                      placeholder="Describe el servicio técnico o agrega observaciones (máx. 500 caracteres)"></textarea>
+            <div class="char-counter" id="comentarioContador">0 / 500</div>
           </div>
           <!-- === FIN NUEVO === -->
 
@@ -387,6 +409,38 @@
 
   document.getElementById('conceptoPago').addEventListener('change', toggleRifField);
   document.addEventListener('DOMContentLoaded', toggleRifField);
+
+  /* ===========================================================
+     NUEVO: Campo "Comentarios" — visible solo para Servicio Técnico
+     (máximo 500 caracteres)
+     =========================================================== */
+  const MAX_COMENTARIO = 500;
+
+  function actualizarContadorComentario(){
+    const area = document.getElementById('comentario');
+    const cont = document.getElementById('comentarioContador');
+    const largo = area.value.length;
+    cont.textContent = largo + ' / ' + MAX_COMENTARIO;
+    cont.classList.toggle('limite', largo >= MAX_COMENTARIO);
+  }
+
+  function toggleComentarioField(){
+    const concepto = document.getElementById('conceptoPago').value;
+    const campo    = document.getElementById('comentarioField');
+    const area     = document.getElementById('comentario');
+
+    if (concepto === 'Servicio Técnico') {
+      campo.style.display = 'block';
+    } else {
+      campo.style.display = 'none';
+      area.value = '';   // se limpia para no enviar datos erróneos
+    }
+    actualizarContadorComentario();
+  }
+
+  document.getElementById('conceptoPago').addEventListener('change', toggleComentarioField);
+  document.getElementById('comentario').addEventListener('input', actualizarContadorComentario);
+  document.addEventListener('DOMContentLoaded', toggleComentarioField);
 
   function mostrarArchivoRif(input){
     const field = document.getElementById('rifFileField');
@@ -618,6 +672,9 @@ function mostrarArchivo(input){
         correo: document.getElementById('correo').value,
         telefono: telefonoInput.value.trim(),
         vendedor: document.getElementById('vendedor').value,
+        comentario: document.getElementById('conceptoPago').value === 'Servicio Técnico'
+          ? document.getElementById('comentario').value.trim().substring(0, MAX_COMENTARIO)
+          : '',
         archivos: comprobantes,
         nombreArchivoRif: rifLeido ? rifLeido.nombreArchivo : '',
         archivoRifBase64: rifLeido ? rifLeido.archivoBase64 : ''
@@ -668,6 +725,7 @@ function onSuccess(respuesta){
     toggleMontoField();
     toggleVendedorField();
     toggleRifField();
+    toggleComentarioField();
 
     const dups = respuesta.duplicados || [];
     if (dups.length > 0) {
@@ -691,9 +749,6 @@ function onError(error){
   setCargando(false);
   mostrarMensaje('Hubo un problema de conexión. Intenta nuevamente.', 'error');
 }
-</script>
-</body>
-</html>
 </script>
 </body>
 </html>
