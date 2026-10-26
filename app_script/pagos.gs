@@ -43,7 +43,7 @@ const COL_CONCEPTO_PAGO  = 12; // L  -> Concepto de pago (Inicial / Reserva / pa
 const COL_TELEFONO       = 13; // M  -> Teléfono ingresado en el formulario
 const COL_RIF            = 14; // N  -> URL del RIF adjunto (Inicial / Reserva)
 const COL_VENDEDOR       = 15; // O  -> VENDEDOR (Inicial / Reserva)
-const COL_COMENTARIO     = 16; // P  -> Comentarios (solo Servicio Técnico)
+const COL_COMENTARIO     = 20; // T  -> OBSERVACIONES (comentarios de Servicio Técnico)
 const MAX_COMENTARIO     = 500;
 const COL_EMPRESA        = 18; // R  -> EMPRESA (usada por el filtro del panel admin)
 const COL_TASA_BINANCE   = 22; // V  -> TASA BINANCE (usada por la tarjeta de Bolívares del panel admin)
@@ -292,7 +292,7 @@ function validarFormData(formData) {
  * sube el archivo a Drive, agrega una fila en PAGOS con los mismos datos,
  * corre el OCR sobre esa fila y valida duplicados por referencia.
  * El RIF (Inicial / Reserva) se sube una sola vez y su URL se repite en cada fila.
- * El comentario (Servicio Técnico) se repite en cada fila (columna P).
+ * El comentario (Servicio Técnico) se repite en cada fila (columna T, OBSERVACIONES).
  */
 function procesarFormulario(formData) {
   try {
@@ -357,16 +357,20 @@ function procesarFormulario(formData) {
         ]);
         const fila = sheet.getLastRow();
 
-        // 2b. Columnas K a P en una sola escritura:
-        // K correo | L concepto | M teléfono | N RIF | O vendedor | P comentario
-        sheet.getRange(fila, COL_CORREO, 1, 6).setValues([[
+        // 2b. Columnas K a O en una sola escritura:
+        // K correo | L concepto | M teléfono | N RIF | O vendedor
+        sheet.getRange(fila, COL_CORREO, 1, 5).setValues([[
           formData.correo || '',
           formData.conceptoPago || '',
           String(formData.telefono || '').trim(),
           rifUrl,
-          vendedor,
-          comentario
+          vendedor
         ]]);
+
+        // 2b-bis. Comentario de Servicio Técnico -> columna T (OBSERVACIONES)
+        if (comentario) {
+          sheet.getRange(fila, COL_COMENTARIO).setValue(comentario);
+        }
 
         // 2c. Monto manual (Efectivo exacto): ANTES del OCR
         if (requiereMontoManual(formData.tipoPago) && (idx === 0 || REPETIR_MONTO_MANUAL_EN_TODAS)) {
