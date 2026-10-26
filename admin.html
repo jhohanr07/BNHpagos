@@ -183,6 +183,7 @@
   .kpi.total{ --accent:var(--violet); }
   .kpi.inicial{ --accent:var(--blue); } .kpi.reserva{ --accent:var(--green); }
   .kpi.iva{ --accent:var(--cyan); } .kpi.cuotaviva{ --accent:var(--amber); }
+  .kpi.servtec{ --accent:var(--violet); }
  
   /* ---- charts ---- */
   .grid2{ display:grid; grid-template-columns:1.3fr 1fr; gap:16px; margin-bottom:22px; }
@@ -299,7 +300,7 @@
           <option value="Reserva">Reserva</option>
           <option value="Pago IVA">Pago IVA</option>
           <option value="Cuota viva">Cuota viva</option>
-          <option value="Cuota viva">Servicio Tècnico</option>
+          <option value="Servicio Técnico">Servicio Técnico</option>
         </select>
       </div>
       
@@ -333,6 +334,7 @@
       <div class="kpi reserva"><div class="label">Reserva</div><div class="value" id="kpiReserva">0</div><div class="count" id="kpiReservaMonto">$0.00</div></div>
       <div class="kpi iva"><div class="label">Pago IVA</div><div class="value" id="kpiIva">0</div><div class="count" id="kpiIvaMonto">$0.00</div></div>
       <div class="kpi cuotaviva"><div class="label">Cuota viva</div><div class="value" id="kpiCuotaViva">0</div><div class="count" id="kpiCuotaVivaMonto">$0.00</div></div>
+      <div class="kpi servtec"><div class="label">Servicio Técnico</div><div class="value" id="kpiServTec">0</div><div class="count" id="kpiServTecMonto">$0.00</div></div>
     </div>
  
     <div class="grid2">
@@ -551,10 +553,11 @@
     document.getElementById('kpiTotal').textContent = datos.length;
 
     const gruposConcepto = {
-      'Inicial':    {monto:0, count:0},
-      'Reserva':    {monto:0, count:0},
-      'Pago IVA':   {monto:0, count:0},
-      'Cuota viva': {monto:0, count:0}
+      'Inicial':          {monto:0, count:0},
+      'Reserva':          {monto:0, count:0},
+      'Pago IVA':         {monto:0, count:0},
+      'Cuota viva':       {monto:0, count:0},
+      'Servicio Técnico': {monto:0, count:0}
     };
 
     datos.forEach(p => {
@@ -573,6 +576,9 @@
 
     document.getElementById('kpiCuotaViva').textContent = gruposConcepto['Cuota viva'].count;
     document.getElementById('kpiCuotaVivaMonto').textContent = fmt(gruposConcepto['Cuota viva'].monto, 'USD');
+
+    document.getElementById('kpiServTec').textContent = gruposConcepto['Servicio Técnico'].count;
+    document.getElementById('kpiServTecMonto').textContent = fmt(gruposConcepto['Servicio Técnico'].monto, 'USD');
   }
 
   function formatFecha(iso){
