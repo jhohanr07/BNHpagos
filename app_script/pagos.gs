@@ -43,6 +43,8 @@ const COL_CONCEPTO_PAGO  = 12; // L  -> Concepto de pago (Inicial / Reserva / pa
 const COL_TELEFONO       = 13; // M  -> Teléfono ingresado en el formulario
 const COL_RIF            = 14; // N  -> URL del RIF adjunto (Inicial / Reserva)
 const COL_VENDEDOR       = 15; // O  -> VENDEDOR (Inicial / Reserva)
+const COL_COMENTARIO     = 16; // P  -> Comentarios (solo Servicio Técnico)
+const MAX_COMENTARIO     = 500;
 const COL_EMPRESA        = 18; // R  -> EMPRESA (usada por el filtro del panel admin)
 const COL_TASA_BINANCE   = 22; // V  -> TASA BINANCE (usada por la tarjeta de Bolívares del panel admin)
 
@@ -181,6 +183,15 @@ function requiereRif(conceptoPago) {
 }
 
 /**
+ * Indica si el concepto de pago es "Servicio Técnico" (ignora tildes y mayúsculas).
+ */
+function esServicioTecnico_(conceptoPago) {
+  const c = String(conceptoPago || '').trim().toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return c === 'SERVICIO TECNICO';
+}
+
+/**
  * Valida que formData traiga todos los campos obligatorios y que el
  * archivo venga en formato Data URL válido ("data:<mime>;base64,<datos>").
  * Si el Tipo de pago es exactamente "Efectivo", exige además el campo
@@ -189,6 +200,8 @@ function requiereRif(conceptoPago) {
  * Si el Concepto de pago es "Inicial" o "Reserva", exige que venga el
  * archivo del RIF ("archivoRifBase64" / "nombreArchivoRif") en formato
  * Data URL válido, y también el campo "vendedor".
+ * Si el Concepto es "Servicio Técnico", valida que el comentario no
+ * supere MAX_COMENTARIO caracteres.
  * No modifica nada en la hoja; solo determina si procesarFormulario()
  * puede continuar con seguridad.
  * @param {Object} formData
@@ -264,6 +277,13 @@ function validarFormData(formData) {
     }
   }
 
+  if (esServicioTecnico_(formData.conceptoPago)) {
+    const comentario = String(formData.comentario || '');
+    if (comentario.length > MAX_COMENTARIO) {
+      return { valido: false, error: 'El comentario no puede superar los ' + MAX_COMENTARIO + ' caracteres.' };
+    }
+  }
+
   return { valido: true, error: '' };
 }
 
@@ -272,6 +292,7 @@ function validarFormData(formData) {
  * sube el archivo a Drive, agrega una fila en PAGOS con los mismos datos,
  * corre el OCR sobre esa fila y valida duplicados por referencia.
  * El RIF (Inicial / Reserva) se sube una sola vez y su URL se repite en cada fila.
+ * El comentario (Servicio Técnico) se repite en cada fila (columna P).
  */
 function procesarFormulario(formData) {
   try {
@@ -306,6 +327,9 @@ function procesarFormulario(formData) {
     }
 
     const vendedor = requiereRif(formData.conceptoPago) ? String(formData.vendedor || '').trim() : '';
+    const comentario = esServicioTecnico_(formData.conceptoPago)
+      ? textoSeguro_(String(formData.comentario || '').trim().substring(0, MAX_COMENTARIO))
+      : '';
     const guardados = [];
     const duplicados = [];
     const errores = [];
@@ -333,14 +357,15 @@ function procesarFormulario(formData) {
         ]);
         const fila = sheet.getLastRow();
 
-        // 2b. Columnas K a O en una sola escritura:
-        // K correo | L concepto | M teléfono | N RIF | O vendedor
-        sheet.getRange(fila, COL_CORREO, 1, 5).setValues([[
+        // 2b. Columnas K a P en una sola escritura:
+        // K correo | L concepto | M teléfono | N RIF | O vendedor | P comentario
+        sheet.getRange(fila, COL_CORREO, 1, 6).setValues([[
           formData.correo || '',
           formData.conceptoPago || '',
           String(formData.telefono || '').trim(),
           rifUrl,
-          vendedor
+          vendedor,
+          comentario
         ]]);
 
         // 2c. Monto manual (Efectivo exacto): ANTES del OCR
@@ -436,6 +461,7 @@ function obtenerPagos() {
         telefono:         fila[COL_TELEFONO - 1],
         rifUrl:           fila[COL_RIF - 1],
         vendedor:         fila[COL_VENDEDOR - 1],
+        comentario:       fila[COL_COMENTARIO - 1],
         empresa:          fila[COL_EMPRESA - 1],          // Columna R, usada por el filtro del panel admin
         tasaBinance:      fila[COL_TASA_BINANCE - 1]      // NUEVO: Columna V, usada para convertir Bs a USD en el panel admin
       }));
@@ -1504,7 +1530,7 @@ function extraerBeneficiario(texto) {
  * ========================================================================== */
 
 function pruebaManualPorFila() {
-  const FILA_DE_PRUEBA = 788; // ajusta la fila a probar
+  const FILA_DE_PRUEBA = 825; // ajusta la fila a probar
   const hoja = SpreadsheetApp.openById(SHEET_ID).getSheetByName(NOMBRE_HOJA);
   procesarOCRFila(hoja, FILA_DE_PRUEBA);
 }
@@ -1580,7 +1606,7 @@ const MAX_TEXTO_FALLO = 45000;
 
 // IA (opcional): la API key de Gemini se lee de la hoja OCR_REGLAS, celda A1.
 // Modelo por defecto editable con la propiedad de script GEMINI_MODEL.
-const IA_ACTIVADA = SI;
+const IA_ACTIVADA = true;
 const IA_MODELO_DEFECTO = 'gemini-3.8-flash';
 const CELDA_API_KEY = 'K1';
 // false = las reglas propuestas por la IA se guardan con ACTIVA = NO
