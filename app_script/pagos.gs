@@ -1100,87 +1100,143 @@ function contarBilletesIndividualmente(archivoDrive) {
 
 
 /* ============================================================================
- * FUNCIONES DE EXTRACCIÓN REFERENCIA
+ *  OCR v2 · EXTRACCIÓN DE REFERENCIA, MONTO Y BENEFICIARIO
+ *  Reemplaza: extraerReferenciaPorPosicion, extraerReferencia, extraerMonto,
+ *             extraerBeneficiario  (mismos nombres, mismos parámetros).
+ *
+ *  Regla de oro: si no hay certeza, devolver 'No encontrada' / 'No encontrado'
+ *  en vez de adivinar. Así entra tu aprendizaje (OCR_REGLAS + IA) y no se
+ *  guarda una referencia falsa que además bloquea el control de duplicados.
  * ========================================================================== */
 
+/* ----------------------------- utilidades OCR ----------------------------- */
+
+function ocrLineas_(texto) {
+  return String(texto || '').replace(/\r/g, '').split('\n')
+    .map(l => l.replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+/** Quita marcas de agua, webs, correos y redes que el OCR mezcla con los datos. */
+function ocrQuitarRuido_(s) {
+  return String(s || '')
+    .replace(/\S+@\S+/g, ' ')
+    .replace(/(?:https?:\/\/)?(?:W{2,3}\.)?[A-Z0-9\-]+\.(?:COM|NET|ORG|VE|GOB)(?:\.VE)?\b\/?\S*/gi, ' ')
+    .replace(/(?:W{2,3}\.?)?\s*BANCAMIGA\s*\.?\s*(?:COM)?/gi, ' ')
+    .replace(/\bW{3}\b\.?/gi, ' ')
+    .replace(/\bTUBANCA\b|\bINSTAGRAM\b|\bFACEBOOK\b|\bTIKTOK\b/gi, ' ');
+}
+
+// Palabras que jamás son una referencia aunque pasen el formato.
+const REF_PALABRAS_PROHIBIDAS_ = new Set([
+  'ESTADO', 'ENTREGADO', 'ACEPTADO', 'PENDIENTE', 'COMPLETADO', 'CANCELADO', 'RECHAZADO',
+  'PROCESANDO', 'DISPONIBLE', 'MENSAJE', 'DESTINATARIO', 'CHECKING', 'SAVINGS', 'TOTAL',
+  'ENVIADA', 'ENVIADO', 'RECIBIDO', 'CONCEPTO', 'IMPORTE', 'MONTO', 'FECHA', 'BANCO',
+  'CUENTA', 'DINERO', 'INSTANTES', 'CANCELAR', 'DETALLES', 'RESUMEN', 'REFERENCIA',
+  'OPERACION', 'TRANSACCION', 'COMPROBANTE', 'EXITOSA', 'EXITOSO', 'TRANSFERENCIA',
+  'CONFIRMATION', 'CONFIRMACION', 'TRANSACTION', 'COMPLETED', 'DELIVERED', 'PENDING',
+  'RECIPIENT', 'ACCOUNT', 'PAYMENT', 'ENROLLED', 'TRANSFER', 'AMOUNT', 'BANKING',
+  'AMERICA', 'DETAILS', 'STATUS', 'NUMBER', 'MEMORANDUM', 'SCHEDULED', 'BENEFICIARIO',
+  'TELEFONO', 'IDENTIFICACION', 'RECEPTOR', 'EMISOR', 'ORIGEN', 'DESTINO', 'PAGOMOVIL',
+  'DEPOSITO', 'EXTRANJERA', 'MONEDA', 'NOMBRE', 'TITULAR', 'SUCURSAL', 'AGENCIA'
+]);
+
 /**
- * Extrae la Referencia usando la POSICIÓN de cada palabra en la imagen
- * (bounding boxes que ya devuelve Cloud Vision), en vez de depender del
- * orden en que el texto plano quedó armado.
- *
- * Por qué esto resuelve el problema de la marca de agua: cuando
- * "www.bancamiga.com" queda superpuesta sobre "Referencia: 2510087091",
- * Vision las reporta como palabras/tokens SEPARADOS, cada uno con su propia
- * caja — nunca se mezclan letra por letra dentro de un mismo token. Así que
- * en vez de parsear una cadena de texto donde el orden de lectura pudo
- * revolverse, buscamos literalmente qué palabras están "a la derecha de
- * Referencia, en su misma fila" y descartamos por CONTENIDO las que
- * pertenezcan a la marca de agua (www / bancamiga / .com / redes sociales),
- * quedándonos solo con las que sí son parte del número.
- *
- * @param {{texto: string, palabras: Array}} datosOCR resultado de extraerDatosConVision()
- * @return {?string} Referencia detectada, o null si no se pudo (para que el
- *         llamador recurra al método por texto plano como respaldo).
+ * ¿Este texto puede ser una referencia? Un solo validador para todos los caminos.
+ * @param {string} v candidato
+ * @param {{soloLetras?: boolean}} [opts] soloLetras: aceptar códigos sin dígitos
+ *        (confirmaciones Zelle de BofA como "eghfcuysu"); solo tras una etiqueta Zelle.
+ */
+function esReferenciaValida_(v, opts) {
+  opts = opts || {};
+  const s = String(v || '').trim();
+  if (!s || /\*/.test(s)) return false;                         // cuenta enmascarada ****1234
+  if (/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}/.test(s)) return false;   // fecha
+  if (/^\d{1,2}:\d{2}/.test(s)) return false;                         // hora
+  if (/^[VJEGP]-?\d{5,10}(?:-?\d)?$/i.test(s)) return false;          // cédula / RIF
+  if (/^-?\d+[.,]\d{2}$/.test(s)) return false;                       // monto 80,00
+  if (/^\$|\$$/.test(s)) return false;                                 // $80
+
+  const c = s.replace(/[^A-Za-z0-9]/g, '');
+  if (c.length < 6 || c.length > 22) return false;
+  if (/^(\d)\1+$/.test(c)) return false;                               // 000000
+  if (REF_PALABRAS_PROHIBIDAS_.has(c.toUpperCase())) return false;
+  if (/^(?:58)?0?4(?:1[246]|2[246])\d{7}$/.test(c)) return false;     // teléfono móvil VE
+  if (/^\d{20,}$/.test(c)) return false;                               // cuenta 20 dígitos
+  if (/^01\d{16,}$/.test(c)) return false;                             // cuenta VE (01xx...)
+  if (/^[A-Z]{2}\d{3,4}$/i.test(c)) return false;                      // sello de cajero CA1983
+
+  if (!/\d/.test(c)) {
+    // Solo letras: únicamente códigos de confirmación Zelle, 7-12 letras.
+    if (!opts.soloLetras) return false;
+    if (!/^[a-z]{7,12}$/i.test(c)) return false;
+    if (!/[a-z]/.test(c.replace(/O/g, ''))) return false;              // BofA los da en minúscula
+    return true;
+  }
+  return true;
+}
+
+/** Busca la primera referencia válida dentro de un fragmento de texto. */
+function primeraReferenciaEn_(fragmento, opts) {
+  const limpio = ocrQuitarRuido_(fragmento).replace(/^[\s:#.\-–N°º]+/, '');
+  const tokens = limpio.split(/\s+/).map(t => t.replace(/^[:#.,;()\[\]]+|[:#.,;()\[\]]+$/g, '')).filter(Boolean);
+  for (const t of tokens) {
+    if (esReferenciaValida_(t, opts)) return t.replace(/[^A-Za-z0-9]/g, '');
+  }
+  // El OCR a veces parte un número en grupos: "7020 781025" -> 7020781025
+  const grupos = limpio.match(/\d{2,8}(?:[ \-]\d{2,8}){1,3}/g) || [];
+  for (const g of grupos) {
+    const j = g.replace(/\D/g, '');
+    if (j.length >= 8 && j.length <= 15 && esReferenciaValida_(j)) return j;
+  }
+  return null;
+}
+
+/* ------------------------------- REFERENCIA -------------------------------- */
+
+/**
+ * Referencia por posición (bounding boxes de Cloud Vision).
+ * Mejoras: prueba TODAS las etiquetas (no solo la primera), ignora filas de
+ * cuenta/fecha y valida el candidato con el mismo filtro que el método por texto.
  */
 function extraerReferenciaPorPosicion(datosOCR) {
   if (!datosOCR || !datosOCR.palabras || datosOCR.palabras.length === 0) return null;
-
   const palabras = datosOCR.palabras;
+  const norm = t => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[:.,#°º]/g, '').toUpperCase();
 
-  // Patrón de etiqueta: cualquier palabra que EMPIECE como "Referencia",
-  // "Ref", "Confirmation", etc. (sin dos puntos, Vision los separa aparte).
-  const PATRON_ETIQUETA = /^(REFERENCIA|REF\.?|CONFIRMATION|TRANSACTION)$/i;
-  const idxLabel = palabras.findIndex(p => PATRON_ETIQUETA.test(p.texto.replace(/[:.,]/g, '')));
-  if (idxLabel === -1) return null;
+  const ETIQUETA = /^(REFERENCIA|REF|CONFIRMATION|CONFIRMACION|TRANSACCION|TRANSACTION|OPERACION|ORDEN)$/;
+  const RELLENO = /^(DE|DEL|LA|NUMBER|NUMERO|NRO|NO|N|ID|CODE|CODIGO|BANCARIA|#|:)$/;
+  const FILA_MALA = /^(CUENTA|DATE|FECHA|TYPE|TIPO|HORA|TIME|MONTO|AMOUNT|CEDULA|TELEFONO)$/;
 
-  const labelWord = palabras[idxLabel];
-  const alturaLabel = Math.max(labelWord.yMax - labelWord.yMin, 1);
-  // Tolerancia vertical generosa (misma "fila" del recibo, aunque el OCR
-  // recorte cada palabra con un poquito de variación en Y).
-  const TOLERANCIA_Y = alturaLabel * 0.8;
+  for (let k = 0; k < palabras.length; k++) {
+    const label = palabras[k];
+    const n = norm(label.texto);
+    if (!ETIQUETA.test(n)) continue;
 
-  // Candidatas: misma fila (Y parecido) y a la derecha del label en X.
-  const candidatas = palabras.filter(p =>
-    p !== labelWord &&
-    Math.abs(p.yCentro - labelWord.yCentro) <= TOLERANCIA_Y &&
-    p.xCentro > labelWord.xCentro
-  );
+    const alto = Math.max(label.yMax - label.yMin, 1);
+    const fila = palabras
+      .filter(p => p !== label && Math.abs(p.yCentro - label.yCentro) <= alto * 0.8 && p.xCentro > label.xCentro)
+      .sort((a, b) => a.xCentro - b.xCentro);
+    if (fila.some(p => FILA_MALA.test(norm(p.texto)))) continue;
 
-  if (candidatas.length === 0) return null;
-
-  // Descartar por CONTENIDO cualquier palabra que sea parte de la marca de
-  // agua / redes sociales / web del banco, sin importar en qué posición del
-  // texto plano hubiera caído.
-  const PATRON_RUIDO = /WWW|BANCAMIGA|\.COM|TUBANCA|INSTAGRAM|FACEBOOK|TIKTOK/i;
-  const limpias = candidatas.filter(p => !PATRON_RUIDO.test(p.texto));
-
-  if (limpias.length === 0) return null;
-
-  limpias.sort((a, b) => a.xCentro - b.xCentro);
-
-  // Caso normal: la referencia suele venir como un solo token ya completo.
-  for (const p of limpias) {
-    const limpio = p.texto.replace(/[^A-Z0-9]/gi, '');
-    if (/^[A-Z0-9]{6,20}$/i.test(limpio) && /\d/.test(limpio)) {
-      return limpio.toUpperCase();
+    const utiles = fila.filter(p => !RELLENO.test(norm(p.texto)) && !/WWW|BANCAMIGA|\.COM|TUBANCA|INSTAGRAM|FACEBOOK|TIKTOK/i.test(p.texto));
+    const zelle = /CONFIRMA/.test(n);
+    // Número partido en varios tokens numéricos contiguos ("7020" "781025"): se une primero
+    const digitos = [];
+    for (const p of utiles) { if (/^\d+$/.test(p.texto)) digitos.push(p.texto); else break; }
+    if (digitos.length > 1) {
+      const unido = digitos.join('');
+      if (unido.length >= 8 && unido.length <= 15 && esReferenciaValida_(unido)) return unido;
+    }
+    for (const p of utiles) {
+      if (esReferenciaValida_(p.texto, { soloLetras: zelle })) return p.texto.replace(/[^A-Za-z0-9]/g, '');
     }
   }
-
-  // Respaldo: si Vision partió el número en varios tokens pequeños
-  // (ej. "251" "0087" "091"), se concatenan en orden de X.
-  const unido = limpias.map(p => p.texto).join('').replace(/[^A-Z0-9]/gi, '');
-  if (/\d{6,}/.test(unido)) return unido.toUpperCase();
-
   return null;
 }
 
 /**
- * Punto de entrada único para obtener la Referencia. Intenta primero el
- * método por posición (más confiable ante marcas de agua superpuestas) y,
- * si no da resultado, cae al método original por texto plano — así ningún
- * comprobante se queda sin intentar todos los caminos disponibles.
- * @param {{texto: string, palabras: Array}} datosOCR resultado de extraerDatosConVision()
- * @return {string} Referencia detectada, o 'No encontrada'
+ * Punto de entrada único (sin cambios de lógica): posición -> texto.
  */
 function extraerReferenciaRobusta(datosOCR) {
   try {
@@ -1190,264 +1246,320 @@ function extraerReferenciaRobusta(datosOCR) {
       return porPosicion;
     }
   } catch (errPos) {
-    // Fail-open: si el método por posición falla por lo que sea, se cae al
-    // método por texto plano sin interrumpir el flujo.
     console.error('⚠️ Error en extraerReferenciaPorPosicion, se usa el método por texto: ' + errPos.message);
   }
-
   const porTexto = extraerReferencia(datosOCR.texto);
   console.log('ℹ️ Referencia obtenida por TEXTO PLANO (respaldo): ' + porTexto);
   return porTexto;
 }
 
 /**
- * Extrae el número de referencia/transacción de un comprobante (Zelle,
- * Binance, transferencia bancaria, pago móvil) a partir del texto OCR.
+ * Extrae la referencia del texto OCR (Zelle, Binance, transferencias, pago móvil).
  * @param {string} texto Texto completo devuelto por Cloud Vision
  * @return {string} Referencia detectada, o 'No encontrada'
  */
 function extraerReferencia(texto) {
-  const lineasRaw = texto.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  texto = String(texto || '');
+  const lineas = ocrLineas_(texto);
 
-  // 1. Etiquetas conocidas (Zelle, transferencias, pago móvil, etc.)
-  const ETIQUETAS = [
-    'ID DE ORDEN',
-    'N[UÚ]MERO DE TRANSACCI[OÓ]N',
-    'TRANSACTION\\s*NUMBER',
-    'N[UÚ]MERO DE REFERENCIA',
-    'N[UÚ]MERO DE CONFIRMACI[OÓ]N',
-    'NRO\\.?\\s*DE\\s*REFERENCIA',
-    'N[°º]\\s*DE\\s*REFERENCIA',
-    'REFERENCIA BANCARIA',
-    'REFERENCIA',
-    'REF\\.?\\s*[:#]',
-    'CONF(?:IRMATION)?\\s*(?:NUMBER|#|:)',
-    'TRANSACTION\\s*ID',
-    'PAYMENT ID'
-  ];
-  const etiquetaRegex = new RegExp('^(?:' + ETIQUETAS.join('|') + ')\\s*:?\\s*(.*)$', 'i');
+  // Líneas cuyo contenido nunca aporta la referencia (cédula, teléfono, cuenta, cajero...)
+  const LINEA_PROHIBIDA = /C\.?\s*I\.?\s*(?:DEL\s*DEPOSIT|:)|C[EÉ]DULA|IDENTIFICACI[OÓ]N|\bRIF\b|DEPOSITANTE|FIRMA|SELLO|CAJERO|^CAJA\b|TEL[EÉ]FONO|CELULAR|N[UÚ]MERO\s*DE\s*CUENTA|CUENTA\s*(?:ORIGEN|DESTINO|DE\s*CARGO|N)|^CUENTA\b|^0500\b|S[IÍ]GUENOS|REDES\s*SOCIALES|^FECHA\b|^HORA\b|\bDATE\b|\bUID\b|PAY\s*ID|BINANCE\s*ID/i;
 
-  // 2. Palabras que NUNCA son una referencia, aunque pasen los regex de formato
-  const PALABRAS_PROHIBIDAS = new Set([
-    'ESTADO', 'ENTREGADO', 'ACEPTADO', 'PENDIENTE', 'COMPLETADO', 'CANCELADO',
-    'RECHAZADO', 'PROCESANDO', 'DISPONIBLE', 'MENSAJE', 'DESTINATARIO',
-    'CHECKING', 'SAVINGS', 'TOTAL', 'PAGA', 'ENVIA', 'ENVIADA', 'ENVIADO',
-    'RECIBIDO', 'CONCEPTO', 'IMPORTE', 'MONTO', 'FECHA', 'HORA', 'BANCO',
-    'CUENTA', 'DINERO', 'INSTANTES', 'CANCELAR', 'DETALLES', 'RESUMEN'
-  ]);
+  // --- 1. Patrones bancarios inconfundibles (Chase / Wells Fargo / BofA) ---
+  const mConocido = texto.match(/\b(?:JPM[A-Z0-9]{9}|WFCT[A-Z0-9]{8}|BOFA[A-Z0-9]{8,10})\b/i);
+  if (mConocido) return mConocido[0].replace(/[^A-Z0-9]/gi, '');
 
-  // 2b. Líneas de contexto que jamás deben aportar un candidato a referencia
-  // (sello del cajero, C.I. del depositante, número de cuenta, teléfono de
-  // atención al cliente, redes sociales / web del banco).
-  const CONTEXTO_PROHIBIDO = /C\.?\s*I\.?\s*DEL\s*DEPOSIT|DEPOSITANTE|FIRMA|SELLO\s*DEL\s*CAJERO|CAJERO|^CAJA\b|TITULAR|TUBANCA|WWW\.|\.COM|@|INSTAGRAM|FACEBOOK|TIKTOK|S[IÍ]GUENOS|REDES\s*SOCIALES|^0500\b|N[UÚ]MERO\s*DE\s*CUENTA/i;
-
-  const lineas = lineasRaw.map(l => ({
-    texto: l,
-    prohibida: CONTEXTO_PROHIBIDO.test(l)
-  }));
-
-  const esInvalido = (v) => {
-    if (!v) return true;
-    const vUpper = v.toUpperCase();
-    if (PALABRAS_PROHIBIDAS.has(vUpper)) return true;
-    if (/^\d{2}[\/\-]\d{2}[\/\-]\d{4}/.test(v)) return true;
-    if (/^[a-z]{3}\s*\d{1,2},?\s*\d{4}/i.test(v)) return true;
-    if (/^[VJEG]-?\d{5,9}$/i.test(v)) return true;
-    if (/^\*+\d+$/.test(v)) return true;
-    if (/\(\.\.\.\d+\)/.test(v)) return true;
-    if (/^0\d{3}-?\d{7}$/.test(v)) return true;
-    if (/^\d{1,2}:\d{2}/.test(v)) return true;
-    // Patrón típico de sello de cajero, ej. "CA1983", "CA2190" (2 letras + 3-4
-    // dígitos cortos, normalmente pegado a "C.I. del Depositante")
-    if (/^[A-Z]{2}\d{3,4}$/i.test(v)) return true;
-    // Los números de cuenta venezolanos tienen exactamente 20 dígitos.
-    // Solo se descartan los de 20 dígitos o más (los IDs de Binance de 18-19 sí valen).
-    if (/^\d{20,}$/.test(v)) return true;
-    return false;
-  };
-
-  const pareceReferencia = (v) =>
-    /\d/.test(v) && /^[A-Z0-9][A-Z0-9\-]{4,20}$/i.test(v) && !esInvalido(v);
-
-  const limpiar = (v) => v.replace(/[^A-Z0-9]/gi, '');
-  const BINANCE_REGEX = /\b\d{18}\b/;
-  const BINANCE_REGEX_AMPLIO = /\b\d{17,19}\b/;
-
-  // --- PASO 0: patrones bancarios inconfundibles primero ---
-  const PATRONES_CONOCIDOS = /\b(?:JPM[A-Z0-9]{9}|WFCT[A-Z0-9]{8}|BOFA[A-Z0-9]{8,10})\b/i;
-  const matchConocido = texto.match(PATRONES_CONOCIDOS);
-  if (matchConocido) return limpiar(matchConocido[0]);
-
-  // --- PASO 0b: comprobantes tipo Binance sin etiqueta visible de "ID DE ORDEN" ---
-  const CONTEXTO_BINANCE = /CUENTA DE FONDOS|A[ÑN]ADIR ALIAS|USDT|BINANCE/i;
-  if (CONTEXTO_BINANCE.test(texto)) {
-    for (const l of lineas) {
-      if (l.prohibida) continue;
-      const m = l.texto.match(BINANCE_REGEX_AMPLIO);
+  // --- 2. Binance: "ID de orden" / "Order ID" -> 17-19 dígitos ---
+  for (let i = 0; i < lineas.length; i++) {
+    if (!/\bID\s*DE\s*(?:LA\s*)?ORDEN\b|\bORDER\s*ID\b/i.test(lineas[i])) continue;
+    for (let j = i; j <= i + 3 && j < lineas.length; j++) {
+      const m = lineas[j].match(/\b\d{17,19}\b/);
       if (m) return m[0];
     }
   }
-
-  // --- PASO 0c (NUEVO): BNC "Nota de operación ejecutada" ---
-  // La referencia viene al final como "Ref.N°. 227837 Edo.Cta." (no al inicio
-  // de línea), por eso la etiqueta normal no la detecta. El \s* también cubre
-  // el caso en que el OCR deje el número en la línea siguiente.
-  const BNC_REF_REGEX = /\bREF\.?\s*N\s*[°º˚oO0]?\s*\.?\s*:?\s*(\d{4,12})\b/i;
-  const mBnc = texto.match(BNC_REF_REGEX);
-  if (mBnc && !esInvalido(mBnc[1])) return mBnc[1];
-
-  // --- PASO 0d (NUEVO): Bancamiga "Depósito Moneda Extranjera" ---
-  // Referencia de 9-11 dígitos (ej. 1840139077). La marca de agua
-  // "www.bancamiga.com" se superpone al número y el OCR mezcla líneas
-  // (sobre todo si la foto está volteada), así que se limpia la marca de agua
-  // y se busca el número cerca de la palabra "Referencia" y, si no, en todo el comprobante.
-  const ES_BANCAMIGA = /BANCAMIG|MONEDA\s*EXTRANJERA|NOMBRE\s*DE\s*LA\s*TRANSACCI[OÓ]N/i;
-  if (ES_BANCAMIGA.test(texto)) {
-    // Líneas que nunca aportan referencia (la marca de agua NO cuenta aquí,
-    // porque justamente ensucia la línea que sí tiene la referencia)
-    const LINEA_NO_UTIL_BCM = /C\.?\s*I\.?\s*DEL\s*DEPOSIT|DEPOSITANTE|FIRMA|SELLO\s*DEL\s*CAJERO|CAJERO|^CAJA\b|TITULAR|TUBANCA|^0500\b|N[UÚ]MERO\s*DE\s*CUENTA/i;
-
-    const limpiarMarcaAgua = (s) => s
-      .replace(/(?:W{2,3}\.?)?\s*BANCAMIGA\s*\.?\s*(?:COM)?/gi, ' ')
-      .replace(/\bW{3}\b\.?/gi, ' ')
-      .replace(/(?<=\d)\.?COM\b/gi, ' ')
-      .replace(/\.COM\b/gi, ' ');
-
-    const validoBcm = (v) =>
-      /^\d{9,11}$/.test(v) && !/^0500/.test(v) && !/^0172/.test(v) && !esInvalido(v);
-
-    const buscarEnTexto = (s, permitirGrupos) => {
-      const t = limpiarMarcaAgua(s);
-      const tokens = t.match(/\b\d{9,11}\b/g) || [];
-      for (const tk of tokens) if (validoBcm(tk)) return tk;
-      if (permitirGrupos) {
-        // El OCR a veces parte el número en 2-3 grupos (ej. "7020 781025")
-        const grupos = t.match(/\d{2,8}(?:[ \-]\d{2,8}){1,2}/g) || [];
-        for (const g of grupos) {
-          const j = g.replace(/\D/g, '');
-          if (validoBcm(j)) return j;
-        }
-      }
-      return null;
-    };
-
-    // (a) Alrededor de la etiqueta "Referencia" (línea anterior, propia y 2 siguientes)
-    for (let i = 0; i < lineasRaw.length; i++) {
-      if (!/REFEREN/i.test(lineasRaw[i])) continue;
-      if (/N[UÚ]MERO\s*DE\s*CUENTA/i.test(lineasRaw[i])) continue;
-      const ventana = lineasRaw
-        .slice(Math.max(0, i - 1), i + 3)
-        .filter(l => !LINEA_NO_UTIL_BCM.test(l) || /REFEREN/i.test(l))
-        .join(' ');
-      const r = buscarEnTexto(ventana, true);
-      if (r) return r;
+  if (/CUENTA\s*DE\s*FONDOS|FUNDING\s*ACCOUNT|A[ÑN]ADIR\s*ALIAS|\bUSDT\b|BINANCE/i.test(texto)) {
+    for (const l of lineas) {
+      if (LINEA_PROHIBIDA.test(l)) continue;
+      const m = l.match(/\b\d{17,19}\b/);
+      if (m && esReferenciaValida_(m[0])) return m[0];
     }
-
-    // (b) Respaldo: cualquier línea útil del comprobante (por si el OCR
-    // separó la etiqueta del número por la rotación)
-    for (const l of lineasRaw) {
-      if (LINEA_NO_UTIL_BCM.test(l)) continue;
-      const r = buscarEnTexto(l, false);
-      if (r) return r;
-    }
-    // Si no se encontró, se continúa con el PASO 1 y 2 de siempre
   }
 
-  // --- PASO 1: búsqueda por etiqueta ---
-  const VENTANA = 4;
+  // --- 3. BNC "Nota de operación ejecutada": "Ref.N°. 227837 Edo.Cta." ---
+  const mBnc = texto.match(/\bREF\.?\s*N\s*[°º˚oO0]?\s*\.?\s*:?\s*(\d{4,12})\b/i);
+  if (mBnc && /NOTA\s*DE\s*OPERACI|BANCO\s*NACIONAL\s*DE\s*CR|\bBNC\b|EDO\.?\s*CTA/i.test(texto)) return mBnc[1];
 
-  for (let i = 0; i < lineas.length; i++) {
-    const l = lineas[i].texto;
-    const m = l.match(etiquetaRegex);
+  // --- 4. Bancamiga "Depósito Moneda Extranjera" (lógica original, ya probada) ---
+  const rBcm = referenciaBancamiga_(texto, lineas);
+  if (rBcm) return rBcm;
 
-    const esBinance = /^ID DE ORDEN/i.test(l);
-    if (esBinance) {
-      for (let j = i; j <= i + 2 && j < lineas.length; j++) {
-        const match18 = lineas[j].texto.match(BINANCE_REGEX);
-        if (match18) return match18[0];
-      }
-      const globalMatch18 = texto.match(BINANCE_REGEX);
-      if (globalMatch18) return globalMatch18[0];
-      continue;
-    }
+  // --- 5. Búsqueda por etiqueta, con validación estricta ---
+  const ETIQUETAS = [
+    { re: /N(?:[UÚ]MERO|RO\.?|[°º]\.?)?\s*DE\s*REFERENCIA|REFERENCIA(?:\s*BANCARIA)?|\bREF\b\.?(?:\s*[:#])?/i, zelle: false },
+    { re: /N(?:[UÚ]MERO|RO\.?|[°º]\.?)\s*DE\s*(?:OPERACI[OÓ]N|TRANSACCI[OÓ]N|COMPROBANTE|RECIBO)|\bOPERACI[OÓ]N\s*(?:N[°º]?|NRO|#)|ID\s*DE\s*TRANSACCI[OÓ]N/i, zelle: false },
+    { re: /CONFIRMATION(?:\s*(?:NUMBER|CODE|#|NO\.?))?|\bCONF\s*(?:#|NO\.?|:)|(?:C[OÓ]DIGO|N[UÚ]MERO)\s*DE\s*CONFIRMACI[OÓ]N/i, zelle: true },
+    { re: /TRANSACTION\s*(?:NUMBER|ID|#|NO\.?)|TRACE\s*(?:NUMBER|#)|PAYMENT\s*ID|REFERENCE\s*(?:NUMBER|#|NO\.?)?/i, zelle: false }
+  ];
+  const VENTANA = 3;
 
-    if (!m) continue;
+  for (const et of ETIQUETAS) {
+    for (let i = 0; i < lineas.length; i++) {
+      const l = lineas[i];
+      const m = l.match(et.re);
+      if (!m) continue;
+      if (/N[UÚ]MERO\s*DE\s*CUENTA|CUENTA/i.test(l.slice(0, m.index))) continue;
 
-    // Si la propia línea de la etiqueta viene con señales de marca de agua
-    // superpuesta, se descarta esta ocurrencia y se sigue buscando.
-    const LINEA_CORRUPTA = /WWW\.|\.COM|@/i;
-    if (LINEA_CORRUPTA.test(l)) continue;
+      // a) misma línea, a la derecha de la etiqueta
+      const r1 = primeraReferenciaEn_(l.slice(m.index + m[0].length), { soloLetras: et.zelle });
+      if (r1) return r1;
 
-    const mismaLinea = m[1].trim();
-
-    if (mismaLinea) {
-      const partes = mismaLinea.split(/\s+/);
-      const candidato = partes[partes.length - 1];
-      if (pareceReferencia(candidato)) return limpiar(candidato);
-    }
-
-    for (let j = i + 1; j <= i + VENTANA && j < lineas.length; j++) {
-      if (lineas[j].prohibida) continue;
-
-      const candidato = lineas[j].texto.trim();
-      const primerElemento = candidato.split(/\s+/)[0];
-      if (pareceReferencia(primerElemento) && !etiquetaRegex.test(candidato)) {
-        return limpiar(primerElemento);
+      // b) líneas siguientes (el OCR suele poner el valor debajo)
+      for (let j = i + 1; j <= i + VENTANA && j < lineas.length; j++) {
+        if (LINEA_PROHIBIDA.test(lineas[j])) continue;
+        const r2 = primeraReferenciaEn_(lineas[j], { soloLetras: et.zelle });
+        if (r2) return r2;
       }
     }
   }
 
-  // --- PASO 2: fallback global (respetando líneas prohibidas) ---
-  const idxReferencia = lineas.findIndex(l => /REFERENCIA/i.test(l.texto));
-  const lineasDesdeReferencia = idxReferencia >= 0 ? lineas.slice(idxReferencia) : lineas;
-
-  const lineasValidas = lineasDesdeReferencia.filter(l => !l.prohibida).map(l => l.texto).join('\n');
-  const candidatosGlobales = lineasValidas.match(/\b[A-Z0-9]{6,20}\b/gi) || [];
-
-  for (const c of candidatosGlobales) {
-    if (!esInvalido(c) && /[A-Z]/i.test(c) && /[0-9]/.test(c)) {
-      return limpiar(c);
+  // --- 6. Zelle BofA sin etiqueta: código justo debajo de la fecha "Oct 13, 2026" ---
+  // (es el mismo patrón que aprendieron tus reglas en OCR_REGLAS)
+  if (/ZELLE|BANK\s*OF\s*AMERICA|YOU\s*SENT|ENVIASTE|SENT\s*TO/i.test(texto)) {
+    for (let i = 0; i < lineas.length - 1; i++) {
+      if (!/^[A-Z]{3,9}\.?\s+\d{1,2},?\s+\d{4}\b/i.test(lineas[i])) continue;
+      const sig = lineas[i + 1].replace(/^[:\s]+/, '');
+      if (/^[A-Za-z0-9]{7,12}$/.test(sig) && /[a-z]/.test(sig) && esReferenciaValida_(sig, { soloLetras: true })) return sig;
     }
   }
-  for (const c of candidatosGlobales) {
-    if (!esInvalido(c) && /^[0-9]+$/.test(c)) {
-      return limpiar(c);
-    }
-  }
+
+  // Sin certeza: que decidan tus reglas aprendidas / la IA.
   return 'No encontrada';
 }
-/* ============================================================================
- * FUNCIONES DE EXTRACCIÓN MONTO
- * ========================================================================== */
+
+/** Bancamiga: misma lógica que ya tenías, aislada en su propia función. */
+function referenciaBancamiga_(texto, lineasRaw) {
+  if (!/BANCAMIG|MONEDA\s*EXTRANJERA|NOMBRE\s*DE\s*LA\s*TRANSACCI[OÓ]N/i.test(texto)) return null;
+  const LINEA_NO_UTIL_BCM = /C\.?\s*I\.?\s*DEL\s*DEPOSIT|DEPOSITANTE|FIRMA|SELLO\s*DEL\s*CAJERO|CAJERO|^CAJA\b|TITULAR|TUBANCA|^0500\b|N[UÚ]MERO\s*DE\s*CUENTA|RIF/i;
+  const limpiarMarcaAgua = (s) => s
+    .replace(/(?:W{2,3}\.?)?\s*BANCAMIGA\s*\.?\s*(?:COM)?/gi, ' ')
+    .replace(/\bW{3}\b\.?/gi, ' ')
+    .replace(/(?<=\d)\.?COM\b/gi, ' ')
+    .replace(/\.COM\b/gi, ' ');
+  const validoBcm = (v) => /^\d{9,11}$/.test(v) && !/^0500/.test(v) && !/^0172/.test(v) && esReferenciaValida_(v);
+  const buscarEnTexto = (s, permitirGrupos) => {
+    const t = limpiarMarcaAgua(s);
+    for (const tk of (t.match(/\b\d{9,11}\b/g) || [])) if (validoBcm(tk)) return tk;
+    if (permitirGrupos) {
+      for (const g of (t.match(/\d{2,8}(?:[ \-]\d{2,8}){1,2}/g) || [])) {
+        const j = g.replace(/\D/g, '');
+        if (validoBcm(j)) return j;
+      }
+    }
+    return null;
+  };
+  for (let i = 0; i < lineasRaw.length; i++) {
+    if (!/REFEREN/i.test(lineasRaw[i]) || /N[UÚ]MERO\s*DE\s*CUENTA/i.test(lineasRaw[i])) continue;
+    const ventana = lineasRaw.slice(Math.max(0, i - 1), i + 3)
+      .filter(l => !LINEA_NO_UTIL_BCM.test(l) || /REFEREN/i.test(l)).join(' ');
+    const r = buscarEnTexto(ventana, true);
+    if (r) return r;
+  }
+  for (const l of lineasRaw) {
+    if (LINEA_NO_UTIL_BCM.test(l)) continue;
+    const r = buscarEnTexto(l, false);
+    if (r) return r;
+  }
+  return null;
+}
+
+/* ---------------------------------- MONTO ---------------------------------- */
+
+/**
+ * Extrae el monto pagado. Entiende formato venezolano (305.745,00) y americano
+ * (263,040.00). Prioriza la línea con etiqueta de monto e ignora saldo,
+ * comisión, tasa, límite, etc.
+ * @return {number|string} el monto como NÚMERO (Sheets lo guarda como número,
+ *         no como texto), o 'No encontrado'.
+ */
 function extraerMonto(texto) {
-  const textoLimpio = texto.replace(/\r?\n/g, ' ');
+  texto = String(texto || '');
+  const lineas = ocrLineas_(texto);
+  const plano = lineas.join(' ');
+  const aNum = s => montoANumero_(s);
 
-  // NUEVO: BNC "Nota de operación ejecutada". El monto viene en bolívares como
-  // "VEB 263,040.00" (aparece dos veces en la nota). Solo se activa si el texto
-  // es claramente de BNC, para no afectar a los demás comprobantes.
-  const ES_BNC = /NOTA\s*DE\s*OPERACI[OÓ]N|BANCO\s*NACIONAL\s*DE\s*CR[EÉ]DITO|\bBNC\b/i;
-  if (ES_BNC.test(textoLimpio)) {
-    const matchBnc = textoLimpio.match(/\bVEB\s*:?\s*(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})\b/i);
-    if (matchBnc) return matchBnc[1].trim();
+  // BNC "Nota de operación ejecutada": "VEB 263,040.00" (se conserva)
+  if (/NOTA\s*DE\s*OPERACI[OÓ]N|BANCO\s*NACIONAL\s*DE\s*CR[EÉ]DITO|\bBNC\b/i.test(plano)) {
+    const mBnc = plano.match(/\bVEB\s*:?\s*(\d{1,3}(?:[.,]\d{3})*[.,]\d{2})\b/i);
+    if (mBnc && aNum(mBnc[1]) > 0) return aNum(mBnc[1]);
   }
 
-  const patronAmericano = /\$\s?\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\$\s?\d+\.\d{2}/;
-  const matchAmerik = textoLimpio.match(patronAmericano);
-  if (matchAmerik) return matchAmerik[0].trim();
+  const NUM = '\\d{1,3}(?:[.,]\\d{3})+(?:[.,]\\d{1,2})?|\\d+(?:[.,]\\d{1,2})?';
+  const PRE = '(?:US\\$|USD|USDT|BS\\.?\\s?S?\\.?|VES|VEB|\\$)';
+  const POST = '(?:USDT|USD|BS\\.?S?|VES|VEB|\\$|D[OÓ]LARES|BOL[IÍ]VARES)';
+  const reMoneda = new RegExp('(?:' + PRE + ')\\s*:?\\s*-?\\s*(' + NUM + ')(?![\\d.,])|(?<![\\d.,])-?(' + NUM + ')\\s*' + POST + '(?![A-Z])', 'gi');
+  const reDecimal = /(?<![\d.,\/])-?(\d{1,3}(?:[.,]\d{3})+[.,]\d{2}|\d+[.,]\d{2})(?![\d.,\/%])/g;
+  const reEntero = /(?<![\d.,\/\-])(\d{1,3}(?:[.,]\d{3})+|\d{1,7})(?![\d.,\/%:])/g;
 
-  const patronesRespaldo = [
-    /\$\s?\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})/i,
-    /\b\d{1,3}(?:[.,]\d{3})*[.,]\d{2}\b/,
-    /\b\d+\s?(?:USDT|USD|BS\.?)\b/i
-  ];
+  const EXCLUIR = /SALDO|DISPONIBLE|BALANCE|COMISI[OÓ]N|\bFEE\b|\bTASA\b|TIPO\s*DE\s*CAMBIO|EXCHANGE|\bITF\b|IGTF|L[IÍ]MITE|\bLIMIT\b|CUENTA|TEL[EÉ]FONO|C\.?\s*I\.?:|\bRIF\b|REFERENCIA|\bREF\b|SERIAL|\bID\b|ORDEN|CONFIRMA|FECHA|\bDATE\b|HORA|\bUID\b/i;
+  const ETIQ = /\bMONTO\b|\bIMPORTE\b|\bTOTAL\b|\bAMOUNT\b|\bCANTIDAD\b|YOU\s*SENT|ENVIASTE|PAGASTE|RECIBISTE|\bVALOR\b|DEP[OÓ]SITO|TRANSFERISTE/i;
 
-  for (let patron of patronesRespaldo) {
-    const match = textoLimpio.match(patron);
-    if (match) return match[0].trim();
+  const sacar = (s, permitirEntero) => {
+    let m;
+    reMoneda.lastIndex = 0;
+    while ((m = reMoneda.exec(s))) { const n = aNum(m[1] || m[2]); if (n > 0) return n; }
+    reDecimal.lastIndex = 0;
+    while ((m = reDecimal.exec(s))) { const n = aNum(m[1]); if (n > 0) return n; }
+    if (permitirEntero) {
+      reEntero.lastIndex = 0;
+      while ((m = reEntero.exec(s))) { const n = aNum(m[1]); if (n > 0) return n; }
+    }
+    return null;
+  };
+
+  // 1) Línea con etiqueta de monto (o las 2 siguientes, si el valor quedó debajo)
+  for (let i = 0; i < lineas.length; i++) {
+    const l = lineas[i];
+    const m = l.match(ETIQ);
+    if (!m) continue;
+    const resto = l.slice(m.index);
+    if (EXCLUIR.test(resto.replace(/^DEP[OÓ]SITO\s*(?:MONEDA\s*EXTRANJERA)?/i, ''))) {
+      // "Total depósito ME. ***** 600" sí vale; "Total comisión" no.
+      if (!/^TOTAL\s*DEP[OÓ]SITO/i.test(resto)) continue;
+    }
+    // Montos sin decimales ("600") solo se aceptan tras MONTO / IMPORTE / AMOUNT / TOTAL DEPÓSITO
+    const permitirEntero = /^(?:MONTO|IMPORTE|AMOUNT|TOTAL\s*DEP)/i.test(resto);
+    const enLinea = sacar(resto.replace(/\*+/g, ' '), permitirEntero);
+    if (enLinea) return enLinea;
+    for (let j = i + 1; j <= i + 2 && j < lineas.length; j++) {
+      if (EXCLUIR.test(lineas[j]) || ETIQ.test(lineas[j])) break;
+      const abajo = sacar(lineas[j], permitirEntero);
+      if (abajo) return abajo;
+    }
   }
 
+  // 2) Sin etiqueta: todos los montos de líneas "limpias"; gana el que más se repite
+  //    (el monto real suele aparecer 2 veces), en empate el primero con moneda.
+  const vistos = [];
+  lineas.forEach(l => {
+    if (EXCLUIR.test(l)) return;
+    let m;
+    reMoneda.lastIndex = 0;
+    while ((m = reMoneda.exec(l))) { const n = aNum(m[1] || m[2]); if (n > 0) vistos.push({ n, moneda: true }); }
+    reDecimal.lastIndex = 0;
+    while ((m = reDecimal.exec(l))) { const n = aNum(m[1]); if (n > 0) vistos.push({ n, moneda: false }); }
+  });
+  if (vistos.length) {
+    const cuenta = {};
+    vistos.forEach(v => { cuenta[v.n] = (cuenta[v.n] || 0) + 1; });
+    let mejor = null;
+    vistos.forEach(v => {
+      if (!mejor) { mejor = v; return; }
+      const cv = cuenta[v.n], cm = cuenta[mejor.n];
+      if (cv > cm || (cv === cm && v.moneda && !mejor.moneda)) mejor = v;
+    });
+    return mejor.n;
+  }
   return 'No encontrado';
 }
+
+/* ------------------------------- BENEFICIARIO ------------------------------ */
+
+function extraerBeneficiario(texto) {
+  texto = String(texto || '');
+  const lineas = ocrLineas_(texto);
+  const limpiar = v => String(v || '').replace(/\S+@\S+/g, '').replace(/[.:,;\-–\s]+$/, '').replace(/^[:\s\-–]+/, '').trim();
+
+  const NO_ES_NOMBRE = /^(?:BANCO|BANK|CUENTA|ACCOUNT|MONTO|AMOUNT|FECHA|DATE|HORA|REFERENCIA|CONCEPTO|MEMO|TEL[EÉ]FONO|C[EÉ]DULA|IDENTIFICACI[OÓ]N|RIF|ESTADO|STATUS|DETALLES?|DESDE|FROM|CHECKING|SAVINGS|N[UÚ]MERO|CONFIRMATION|TOTAL|IMPORTE|COMISI[OÓ]N|ENVIADO|SENT|PENDIENTE|COMPLETADO)\b/i;
+  const esNombre = v => {
+    const s = limpiar(v);
+    if (s.length < 3 || s.length > 80) return false;
+    if (!/[A-Za-zÁÉÍÓÚÑáéíóúñ]{2}/.test(s)) return false;
+    if (NO_ES_NOMBRE.test(s)) return false;
+    if (/^[\d\s$.,\-+*\/:()]+$/.test(s)) return false;                   // solo números/montos
+    if ((s.match(/\d/g) || []).length > s.length * 0.3) return false;    // demasiados dígitos
+    if (/^\$|^\d+[.,]\d{2}/.test(s)) return false;
+    return true;
+  };
+
+  // Etiquetas por prioridad (\b evita que "TOTAL" se lea como "TO" + "TAL")
+  const ETIQUETAS = [
+    /^Inscrit[oa]\s*(?:\(a\))?\s*como\b[\s:]*(.*)$/i,
+    /^(?:Nombre\s+del?\s+(?:beneficiario|titular|destinatario|receptor)|Beneficiario|Destinatario|Receptor|Recipient|Pagado\s+a|Paid\s+to|Enviad[oa]\s+a|Sent\s+to)\b[\s:]*(.*)$/i,
+    /^(?:To|Para|Alias|Enrolled\s+as)\b\s*(:)?\s*(.*)$/i,
+    /^A\s*(:)\s*(.*)$/i
+  ];
+  // En "To / Para / Alias / A:" el valor solo vale con dos puntos o si está en MAYÚSCULAS
+  // ("Para cualquier consulta..." no es un beneficiario).
+  const valorDe = (patron, m) => {
+    if (m.length < 3) return m[1];
+    const v = m[2] || '';
+    return (m[1] || /^[A-ZÁÉÍÓÚÑ0-9 .,&'\-]+$/.test(v)) ? v : '';
+  };
+  for (const patron of ETIQUETAS) {
+    for (let i = 0; i < lineas.length; i++) {
+      const m = lineas[i].match(patron);
+      if (!m) continue;
+      const v = valorDe(patron, m);
+      if (esNombre(v)) return limpiar(v);
+      if (m.length >= 3 && String(m[2] || '').trim() && !v) continue;  // "Para cualquier..." -> no es etiqueta
+      // etiqueta sola: el nombre suele venir en la línea siguiente
+      for (let j = i + 1; j <= i + 2 && j < lineas.length; j++) {
+        if (esNombre(lineas[j])) return limpiar(lineas[j]);
+        if (/:\s*$/.test(lineas[j]) || ETIQUETAS.some(p => p.test(lineas[j]))) break;
+      }
+    }
+  }
+
+  // Frases: "Enviaste $X a Y", "You sent $X to Y", "Dinero enviado a Y"
+  const FRASES = [
+    /Enviaste\s+(?:US)?\$?\s?[\d.,]+\s+a\s+([^\n]+?)\.?\s*$/im,
+    /You\s+sent\s+\$?\s?[\d.,]+\s+to\s+([^\n]+?)\.?\s*$/im,
+    /Dinero\s+enviado\s+a\s+([^\n]+)/i,
+    /(?:sent\s+to|payment\s+of.*?to)\s+([^\n]+)/i
+  ];
+  for (const p of FRASES) {
+    const m = texto.match(p);
+    if (m && esNombre(m[1])) return limpiar(m[1]);
+  }
+  return 'No encontrado';
+}
+
+/* ---------------------------- PRUEBA (solo lectura) ---------------------------- */
+
+/**
+ * Ejecútala a mano desde el editor: pasa las funciones nuevas por cada fila de
+ * OCR_FALLOS que tenga VALOR CORRECTO y compara. NO escribe nada en ninguna hoja.
+ * Mira el resultado en "Registro de ejecución".
+ */
+function probarOCRv2() {
+  const hoja = SpreadsheetApp.openById(SHEET_ID).getSheetByName(HOJA_OCR_FALLOS);
+  if (!hoja) { console.log('No existe la hoja ' + HOJA_OCR_FALLOS); return; }
+  const filas = hoja.getDataRange().getValues().slice(1);
+  const fn = { REFERENCIA: extraerReferencia, MONTO: extraerMonto, BENEFICIARIO: extraerBeneficiario };
+  const res = {};
+  const fallas = [];
+  filas.forEach((f, i) => {
+    const campo = String(f[2] || '').toUpperCase().trim();
+    const texto = String(f[5] || '');
+    const correcto = String(f[6] || '').trim();
+    if (!fn[campo] || !correcto) return;
+    const r = res[campo] = res[campo] || { ok: 0, vacio: 0, mal: 0, sinTexto: 0 };
+    if (!texto.trim() || /Procesando OCR de la fila|ERROR OCR/i.test(texto)) { r.sinTexto++; return; }
+    const obtenido = fn[campo](texto);
+    if (sonMismoValor_(campo, obtenido, correcto)) r.ok++;
+    else if (esFallo_(campo, obtenido)) r.vacio++;   // devolvió "No encontrada": lo resuelve regla/IA
+    else { r.mal++; fallas.push('Fila ' + (i + 2) + ' · ' + campo + ' · esperado "' + correcto + '" · obtuvo "' + obtenido + '"'); }
+  });
+  Object.keys(res).forEach(c => {
+    const r = res[c], total = r.ok + r.vacio + r.mal;
+    console.log(c + ': ' + r.ok + '/' + total + ' correctos · ' + r.vacio + ' "No encontrada" (pasan a reglas/IA) · ' +
+      r.mal + ' INCORRECTOS · ' + r.sinTexto + ' sin texto OCR útil');
+  });
+  if (fallas.length) console.log('Valores incorrectos:\n' + fallas.join('\n'));
+  return res;
+}
+
+
 /* ============================================================================
  * FUNCIÓN DE EXTRACCIÓN DE MONTO PARA PAGOS EN EFECTIVO (billetes fotografiados)
  * ========================================================================== */
@@ -1481,54 +1593,6 @@ function extraerMontoEfectivo(texto, cantidadBilletes = 1) {
 }
 
 
-
-
-/* ============================================================================
- * FUNCIONES DE EXTRACCIÓN BENEFICIARIO
- * ========================================================================== */
-
-function extraerBeneficiario(texto) {
-  const lineas = texto.split('\n').map(l => l.trim()).filter(Boolean);
-
-  const limpiar = (valor) => valor.replace(/[.:]+$/, '').trim();
-
-  // Etiquetas ordenadas por prioridad (nombre legal/registrado primero)
-  const etiquetas = [
-    /^Inscrito\(?a?\)?\s+como[\s:]*(.*)$/i,
-    /^(?:BENEFICIARIO|Nombre\s+del?\s+titular)[\s:]*(.*)$/i,
-    /^(?:TO|AS|ALIAS|ENVIADA\s+A|Enviado\s+a)[\s:]*(.*)$/i,
-    /^A:\s*(.*)$/i, // "A:" con dos puntos, evita falsos positivos con la letra "A" suelta
-  ];
-
-  for (const patron of etiquetas) {
-    for (let i = 0; i < lineas.length; i++) {
-      const m = lineas[i].match(patron);
-      if (m) {
-        const valor = (m[1] || '').trim();
-        if (valor.length > 2) return limpiar(valor);
-
-        // Si la etiqueta está sola en su línea, el valor puede venir en la siguiente
-        if (lineas[i + 1] && lineas[i + 1].length > 2) {
-          return limpiar(lineas[i + 1]);
-        }
-      }
-    }
-  }
-
-  // Frases embebidas: "Enviaste $X a Y", "Dinero enviado a Y", "sent to Y"
-  const patronesTexto = [
-    /Enviaste\s+\$?[\d.,]+\s+a\s+([^\n.]+?)\.?\s*$/im,
-    /Dinero enviado a\s+([^\n]+)/i,
-    /(?:sent to|payment of.*?to)\s+([^\n]+)/i,
-  ];
-
-  for (const patron of patronesTexto) {
-    const m = texto.match(patron);
-    if (m && m[1]) return limpiar(m[1]);
-  }
-
-  return 'No encontrado';
-}
 /* ============================================================================
  * FUNCIÓN DE PRUEBA MANUAL
  * ========================================================================== */
