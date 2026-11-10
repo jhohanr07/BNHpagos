@@ -8,234 +8,197 @@
 <script src="gas-shim.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <style>
-   :root{
-    --bg:#060c18;
-    --bg-deep:#03060e;
-    --panel:#0c1830;
-    --panel-2:#101f3d;
-    --border:rgba(120,190,255,.14);
-    --border-hi:rgba(120,190,255,.32);
-    --cyan:#2ad4ff;
-    --cyan-soft:#7fe8ff;
-    --blue:#3d6bff;
-    --green:#34e6a8;
-    --amber:#ffb648;
-    --violet:#8b7bff;
-    --text:#eaf3fb;
-    --text-dim:#8296b3;
-    --text-faint:#4d5e78;
+  :root{
+    --bg:#060c18; --bg-deep:#03060e; --panel:#0c1830; --panel-2:#101f3d;
+    --border:rgba(120,190,255,.14); --border-hi:rgba(120,190,255,.32);
+    --cyan:#2ad4ff; --cyan-soft:#7fe8ff; --blue:#3d6bff; --green:#34e6a8;
+    --amber:#ffb648; --violet:#8b7bff; --red:#ff6b7a;
+    --text:#eaf3fb; --text-dim:#8296b3; --text-faint:#5a6b86;
     --radius:16px;
-    --font-display:'Space Grotesk', sans-serif;
-    --font-body:'Inter', sans-serif;
-    --font-mono:'JetBrains Mono', monospace;
+    --font-display:'Space Grotesk', system-ui, sans-serif;
+    --font-body:'Inter', system-ui, sans-serif;
+    --font-mono:'JetBrains Mono', ui-monospace, monospace;
   }
   *{ box-sizing:border-box; }
+  [hidden]{ display:none !important; }
   html,body{ height:100%; }
   body{
-    margin:0; background:var(--bg); color:var(--text); font-family:var(--font-body);
+    margin:0; background:var(--bg); color:var(--text); font-family:var(--font-body); min-height:100%;
     background-image:
       radial-gradient(1100px 520px at 12% -10%, rgba(61,107,255,.20), transparent 60%),
       radial-gradient(900px 500px at 100% 0%, rgba(42,212,255,.14), transparent 55%),
       linear-gradient(var(--bg), var(--bg-deep));
-    min-height:100%;
   }
   ::selection{ background:rgba(42,212,255,.3); color:#fff; }
   ::-webkit-scrollbar{ width:10px; height:10px; }
   ::-webkit-scrollbar-thumb{ background:#16274a; border-radius:8px; }
-  ::-webkit-scrollbar-track{ background:transparent; }
   a{ color:inherit; }
- 
+  button{ font-family:inherit; }
+  :focus-visible{ outline:2px solid var(--cyan); outline-offset:2px; }
+
   .bg-grid{
     position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.35;
-    background-image:
-      linear-gradient(rgba(120,190,255,.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(120,190,255,.05) 1px, transparent 1px);
+    background-image:linear-gradient(rgba(120,190,255,.05) 1px, transparent 1px),
+                     linear-gradient(90deg, rgba(120,190,255,.05) 1px, transparent 1px);
     background-size:42px 42px;
     mask-image:radial-gradient(1000px 700px at 50% 0%, #000 20%, transparent 75%);
   }
- 
-  /* ================= LOGIN GATE ================= */
+
+  /* ================= LOGIN ================= */
   #gate{
     position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:20px;
-    background:
-      radial-gradient(900px 500px at 20% 15%, rgba(61,107,255,.30), transparent 60%),
-      radial-gradient(700px 500px at 85% 85%, rgba(42,212,255,.22), transparent 55%),
-      var(--bg-deep);
+    background:radial-gradient(900px 500px at 20% 15%, rgba(61,107,255,.30), transparent 60%),
+               radial-gradient(700px 500px at 85% 85%, rgba(42,212,255,.22), transparent 55%), var(--bg-deep);
   }
   #gate .box{
-    position:relative; width:100%; max-width:360px; text-align:center; padding:40px 32px 32px;
-    background:linear-gradient(180deg, rgba(16,31,61,.9), rgba(9,17,34,.9));
-    border:1px solid var(--border-hi); border-radius:20px;
-    box-shadow:0 30px 80px -25px rgba(0,0,0,.7), 0 0 0 1px rgba(42,212,255,.04) inset;
-    backdrop-filter:blur(6px);
+    width:100%; max-width:360px; text-align:center; padding:40px 32px 32px;
+    background:linear-gradient(180deg, rgba(16,31,61,.92), rgba(9,17,34,.92));
+    border:1px solid var(--border-hi); border-radius:20px; box-shadow:0 30px 80px -25px rgba(0,0,0,.7);
   }
-  #gate .box::before{
-    content:''; position:absolute; inset:-1px; border-radius:20px; padding:1px;
-    background:linear-gradient(135deg, rgba(42,212,255,.5), transparent 40%, transparent 60%, rgba(61,107,255,.5));
-    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite:xor; mask-composite:exclude; pointer-events:none;
-  }
-  .logo-mark{
-    width:auto; height:auto; margin:0 auto 18px; padding:14px 20px; border-radius:16px; display:inline-flex; align-items:center; justify-content:center;
-    background:#ffffff; box-shadow:0 0 0 1px rgba(255,255,255,.08), 0 12px 30px -8px rgba(42,212,255,.55);
-  }
+  .logo-mark{ margin:0 auto 18px; padding:14px 20px; border-radius:16px; display:inline-flex; background:#fff;
+    box-shadow:0 12px 30px -8px rgba(42,212,255,.55); }
   .logo-mark svg{ display:block; height:46px; width:auto; }
-  #gate h2{ font-family:var(--font-display); font-size:18px; margin:0 0 6px; font-weight:600; color:#fff; }
+  #gate h2{ font-family:var(--font-display); font-size:18px; margin:0 0 6px; font-weight:600; }
   #gate p{ font-size:12.5px; color:var(--text-dim); margin:0 0 22px; line-height:1.5; }
   #gate input{
     width:100%; padding:13px 14px; border:1px solid var(--border); border-radius:11px; margin-bottom:12px;
-    background:rgba(255,255,255,.03); color:var(--text); font-size:14px; font-family:var(--font-mono); letter-spacing:.05em;
-    transition:border-color .15s, box-shadow .15s;
+    background:rgba(255,255,255,.03); color:var(--text); font-size:14px; font-family:var(--font-mono);
   }
-  #gate input::placeholder{ color:var(--text-faint); font-family:var(--font-body); letter-spacing:normal; }
   #gate input:focus{ outline:none; border-color:var(--cyan); box-shadow:0 0 0 3px rgba(42,212,255,.15); }
-  #gate button{
-    width:100%; padding:13px; border:none; border-radius:11px; cursor:pointer; margin-top:2px;
+  .btn-primary{
+    width:100%; padding:13px; border:none; border-radius:11px; cursor:pointer;
     background:linear-gradient(135deg, var(--blue), var(--cyan)); color:#04101f;
-    font-family:var(--font-display); font-weight:700; font-size:14px; letter-spacing:.01em;
-    box-shadow:0 10px 24px -8px rgba(42,212,255,.5);
-    transition:transform .12s, box-shadow .12s;
+    font-family:var(--font-display); font-weight:700; font-size:14px; box-shadow:0 10px 24px -8px rgba(42,212,255,.5);
+    transition:transform .12s;
   }
-  #gate button:hover{ transform:translateY(-1px); box-shadow:0 14px 30px -8px rgba(42,212,255,.65); }
-  #gate button:active{ transform:translateY(0); }
-  #gate .err{ color:#ff6b7a; font-size:12px; margin-top:12px; display:none; font-weight:500; }
- 
-  /* ================= APP SHELL ================= */
+  .btn-primary:hover{ transform:translateY(-1px); }
+  #gateErr{ color:var(--red); font-size:12px; margin:12px 0 0; min-height:16px; font-weight:500; }
+
+  /* ================= APP ================= */
   #app{ display:none; position:relative; z-index:1; }
- 
   header{
-    position:sticky; top:0; z-index:10; padding:18px 32px; display:flex; align-items:center; justify-content:space-between;
-    flex-wrap:wrap; gap:14px;
-    background:rgba(6,12,24,.72); backdrop-filter:blur(14px); border-bottom:1px solid var(--border);
+    position:sticky; top:0; z-index:10; padding:14px 32px; display:flex; align-items:center; justify-content:space-between;
+    flex-wrap:wrap; gap:14px; background:rgba(6,12,24,.78); backdrop-filter:blur(14px); border-bottom:1px solid var(--border);
   }
   header .left{ display:flex; align-items:center; gap:14px; }
-  header .mark{
-    width:auto; height:40px; padding:0 12px; border-radius:11px; display:flex; align-items:center; justify-content:center;
-    background:#ffffff; box-shadow:0 0 24px -4px rgba(42,212,255,.55);
-  }
+  header .mark{ height:40px; padding:0 12px; border-radius:11px; display:flex; align-items:center; background:#fff; }
   header .mark svg{ display:block; height:26px; width:auto; }
-  header h1{ font-family:var(--font-display); font-size:16.5px; margin:0; font-weight:600; color:#fff; display:flex; align-items:center; gap:9px; }
+  header h1{ font-family:var(--font-display); font-size:16.5px; margin:0; font-weight:600; display:flex; align-items:center; gap:9px; }
   .live-dot{ width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 0 3px rgba(52,230,168,.18); animation:pulse 2s ease-in-out infinite; }
-  @keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:.35; } }
+  @keyframes pulse{ 50%{ opacity:.35; } }
   header .sub{ font-size:11.5px; color:var(--text-dim); margin:2px 0 0; }
-  header .refresh{
+  .actions{ display:flex; gap:8px; flex-wrap:wrap; }
+  .btn{
     background:rgba(120,190,255,.08); color:var(--cyan-soft); border:1px solid var(--border-hi);
-    border-radius:10px; padding:9px 16px; font-size:12.5px; font-weight:600; cursor:pointer; display:flex; gap:8px; align-items:center;
-    font-family:var(--font-body); transition:background .15s, border-color .15s;
+    border-radius:10px; padding:9px 14px; font-size:12.5px; font-weight:600; cursor:pointer; display:inline-flex; gap:7px; align-items:center;
+    transition:background .15s, border-color .15s;
   }
-  header .refresh:hover{ background:rgba(42,212,255,.14); border-color:var(--cyan); }
-  header .refresh svg{ width:14px; height:14px; }
- 
-  main{ max-width:1320px; margin:0 auto; padding:26px 32px 70px; }
- 
-  /* ---- filters ---- */
-  .filters{
-    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px;
-    display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; margin-bottom:22px;
-  }
-  .filters .f{ display:flex; flex-direction:column; gap:6px; }
-  .filters label{ font-size:10.5px; font-weight:700; color:var(--text-faint); text-transform:uppercase; letter-spacing:.07em; font-family:var(--font-mono); }
-  .filters input, .filters select{
-    padding:10px 13px; border:1px solid var(--border); border-radius:9px; font-size:13.5px; font-family:var(--font-body);
-    min-width:160px; background:rgba(255,255,255,.03); color:var(--text); color-scheme:dark;
-  }
-  .filters input:focus, .filters select:focus{ outline:none; border-color:var(--cyan); box-shadow:0 0 0 3px rgba(42,212,255,.12); }
-  
-  /* Fondo oscuro del panel para las opciones de los selects */
-  .filters select option {
-    background-color: var(--panel);
-    color: var(--text);
-  }
+  .btn:hover{ background:rgba(42,212,255,.14); border-color:var(--cyan); }
+  .btn svg{ width:14px; height:14px; }
+  .btn.ghost{ background:none; color:var(--text-dim); border-color:var(--border); }
+  .btn.ghost:hover{ color:var(--text); }
 
-  .filters .clear{
-    background:none; border:1px solid var(--border); color:var(--text-dim); border-radius:9px; padding:10px 16px;
-    font-size:12.5px; font-weight:600; cursor:pointer; font-family:var(--font-body); transition:border-color .15s, color .15s;
+  main{ max-width:1360px; margin:0 auto; padding:24px 32px 70px; }
+
+  .filters{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px;
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(165px,1fr)); gap:14px; align-items:end; margin-bottom:20px;
   }
-  .filters .clear:hover{ border-color:var(--border-hi); color:var(--text); }
- 
-  /* ---- kpis ---- */
-  .kpis{ display:grid; grid-template-columns:repeat(auto-fit, minmax(196px,1fr)); gap:14px; margin-bottom:22px; }
+  .f{ display:flex; flex-direction:column; gap:6px; min-width:0; }
+  .f label{ font-size:10.5px; font-weight:600; color:var(--text-faint); text-transform:uppercase; letter-spacing:.07em; font-family:var(--font-mono); }
+  .f input, .f select{
+    width:100%; padding:9px 12px; border:1px solid var(--border); border-radius:9px; font-size:13.5px; font-family:var(--font-body);
+    background:rgba(255,255,255,.03); color:var(--text); color-scheme:dark;
+  }
+  .f input:focus, .f select:focus{ outline:none; border-color:var(--cyan); box-shadow:0 0 0 3px rgba(42,212,255,.12); }
+  .f select option{ background:var(--panel); color:var(--text); }
+
+  .section-title{ font-family:var(--font-mono); font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--text-faint); margin:4px 2px 10px; }
+
+  .kpis{ display:grid; grid-template-columns:repeat(auto-fit, minmax(190px,1fr)); gap:14px; margin-bottom:22px; }
   .kpi{
     background:linear-gradient(160deg, var(--panel-2), var(--panel)); border:1px solid var(--border); border-radius:var(--radius);
-    padding:18px 20px; position:relative; overflow:hidden;
+    padding:16px 18px; position:relative; overflow:hidden;
   }
   .kpi::before{ content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--accent); box-shadow:0 0 16px var(--accent); }
-  .kpi::after{
-    content:''; position:absolute; right:-10px; bottom:-16px; width:90px; height:60px; opacity:.5; pointer-events:none;
-    background:
-      linear-gradient(90deg, transparent 0 8%, var(--accent) 8% 14%, transparent 14% 22%,
-        var(--accent) 22% 30%, transparent 30% 40%, var(--accent) 40% 48%, transparent 48% 58%,
-        var(--accent) 58% 66%, transparent 66% 76%, var(--accent) 76% 84%, transparent 84% 100%);
-    -webkit-mask:linear-gradient(180deg, transparent, #000 55%);
-    mask:linear-gradient(180deg, transparent, #000 55%);
-    filter:blur(.3px);
-  }
-  .kpi .label{ font-size:10.5px; color:var(--text-dim); font-weight:700; text-transform:uppercase; letter-spacing:.07em; font-family:var(--font-mono); }
-  .kpi .value{ font-family:var(--font-display); font-size:24px; font-weight:700; color:#fff; margin-top:8px; }
+  .kpi .label{ font-size:10.5px; color:var(--text-dim); font-weight:600; text-transform:uppercase; letter-spacing:.07em; font-family:var(--font-mono); }
+  .kpi .value{ font-family:var(--font-display); font-size:23px; font-weight:700; color:#fff; margin-top:8px; font-variant-numeric:tabular-nums; word-break:break-word; }
   .kpi .count{ font-size:11.5px; color:var(--text-faint); margin-top:3px; }
-  .kpi .conv{ font-family:var(--font-display); font-size:15px; font-weight:700; color:var(--green); margin-top:6px; position:relative; z-index:1; }
-  .kpi .conv small{ display:block; font-family:var(--font-body); font-size:10.5px; font-weight:500; color:var(--text-faint); margin-top:2px; }
-  .kpi.bs{ --accent:var(--blue); } .kpi.usd{ --accent:var(--green); }
-  .kpi.usdt{ --accent:var(--cyan); } .kpi.efectivo{ --accent:var(--amber); }
-  .kpi.total{ --accent:var(--violet); }
-  .kpi.inicial{ --accent:var(--blue); } .kpi.reserva{ --accent:var(--green); }
-  .kpi.iva{ --accent:var(--cyan); } .kpi.cuotaviva{ --accent:var(--amber); }
-  .kpi.servtec{ --accent:var(--violet); }
- 
-  /* ---- charts ---- */
-  .grid2{ display:grid; grid-template-columns:1.3fr 1fr; gap:16px; margin-bottom:22px; }
-  @media (max-width:900px){ .grid2{ grid-template-columns:1fr; } }
-  .panel{ background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:20px 22px; }
-  .panel h3{ font-family:var(--font-display); font-size:14px; margin:0 0 16px; color:#fff; font-weight:600; display:flex; align-items:center; gap:8px; }
-  .panel h3::before{ content:''; width:6px; height:6px; border-radius:2px; background:var(--cyan); box-shadow:0 0 10px var(--cyan); display:inline-block; }
-  .panel .chart-box{ position:relative; height:260px; }
-  .panel canvas{ max-height:260px; }
- 
-  /* ---- table ---- */
-  .table-wrap{ background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); overflow:auto; }
-  table{ width:100%; border-collapse:collapse; font-size:13px; }
-  thead th{
-    text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint);
-    padding:13px 16px; border-bottom:1px solid var(--border); font-family:var(--font-mono); font-weight:600;
-    position:sticky; top:0; background:var(--panel);
+  .kpi .conv{ font-family:var(--font-display); font-size:15px; font-weight:700; color:var(--green); margin-top:6px; font-variant-numeric:tabular-nums; }
+  .kpi .note{ font-size:10.5px; color:var(--text-faint); margin-top:3px; }
+  .kpi .note.warn{ color:var(--amber); }
+  .kpi.hero{ background:linear-gradient(160deg, rgba(139,123,255,.18), var(--panel)); border-color:rgba(139,123,255,.35); }
+  .a-blue{ --accent:var(--blue); } .a-green{ --accent:var(--green); } .a-cyan{ --accent:var(--cyan); }
+  .a-amber{ --accent:var(--amber); } .a-violet{ --accent:var(--violet); } .a-red{ --accent:var(--red); }
+
+  /* ---- auditoría ---- */
+  .audit{ background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; margin-bottom:22px; }
+  .audit-head{ display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+  .audit-head h3{ font-family:var(--font-display); font-size:14px; margin:0; font-weight:600; }
+  .audit-head p{ margin:2px 0 0; font-size:12px; color:var(--text-dim); }
+  .chips{ display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{
+    border:1px solid var(--border); background:rgba(255,255,255,.02); color:var(--text); border-radius:999px;
+    padding:7px 12px; font-size:12px; cursor:pointer; display:inline-flex; gap:8px; align-items:center;
   }
-  tbody td{ padding:13px 16px; border-bottom:1px solid rgba(120,190,255,.06); color:var(--text); }
-  tbody td:nth-child(6){ font-family:var(--font-mono); }
-  tbody tr{ transition:background .12s; }
+  .chip b{ font-family:var(--font-mono); font-size:11.5px; padding:1px 7px; border-radius:999px; background:rgba(255,182,72,.16); color:var(--amber); }
+  .chip.ok b{ background:rgba(52,230,168,.14); color:var(--green); }
+  .chip.zero{ opacity:.45; cursor:default; }
+  .chip.active{ border-color:var(--amber); background:rgba(255,182,72,.10); }
+  .audit-detail{ margin-top:10px; font-size:12px; color:var(--text-dim); }
+  .audit-detail code{ font-family:var(--font-mono); color:var(--amber); }
+
+  .grid2{ display:grid; grid-template-columns:1.3fr 1fr; gap:16px; margin-bottom:22px; }
+  @media (max-width:900px){ .grid2{ grid-template-columns:1fr; } main{ padding:20px 16px 60px; } header{ padding:12px 16px; } }
+  .panel{ background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px; }
+  .panel h3{ font-family:var(--font-display); font-size:14px; margin:0 0 14px; font-weight:600; display:flex; align-items:center; gap:8px; }
+  .panel h3 small{ font-family:var(--font-body); font-weight:500; color:var(--text-faint); font-size:11px; }
+  .chart-box{ position:relative; height:260px; }
+  .chart-empty{ display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-faint); font-size:12.5px; }
+
+  .table-head{ display:flex; justify-content:space-between; align-items:center; margin:0 2px 10px; gap:10px; flex-wrap:wrap; }
+  .table-head .meta{ font-size:12px; color:var(--text-dim); }
+  .table-wrap{ background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); overflow:auto; max-height:70vh; }
+  table{ width:100%; border-collapse:collapse; font-size:12.8px; }
+  thead th{
+    text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); white-space:nowrap;
+    padding:12px 14px; border-bottom:1px solid var(--border); font-family:var(--font-mono); font-weight:600;
+    position:sticky; top:0; background:var(--panel); z-index:1;
+  }
+  th.num, td.num{ text-align:right; font-family:var(--font-mono); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  tbody td{ padding:11px 14px; border-bottom:1px solid rgba(120,190,255,.06); }
   tbody tr:hover{ background:rgba(120,190,255,.045); }
-  .pill{ display:inline-block; padding:4px 11px; border-radius:999px; font-size:11px; font-weight:700; letter-spacing:.02em; }
+  tbody tr.flag td:first-child{ box-shadow:inset 3px 0 0 var(--amber); }
+  .pill{ display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap; }
   .pill.Bs{ background:rgba(61,107,255,.15); color:#8fa9ff; }
   .pill.USD{ background:rgba(52,230,168,.14); color:var(--green); }
   .pill.USDT{ background:rgba(42,212,255,.14); color:var(--cyan-soft); }
   .pill.Efectivo{ background:rgba(255,182,72,.14); color:var(--amber); }
+  .pill.X{ background:rgba(255,107,122,.14); color:var(--red); }
+  .muted{ color:var(--text-faint); }
+  .warn-ico{ color:var(--amber); cursor:help; margin-left:4px; }
   .link{ color:var(--cyan-soft); font-weight:600; text-decoration:none; }
   .link:hover{ text-decoration:underline; }
-  .empty{ text-align:center; padding:48px 0; color:var(--text-faint); font-size:13px; }
-  .loading{ text-align:center; padding:60px 0; color:var(--text-dim); font-size:13.5px; }
-  .spin{ width:26px; height:26px; border:3px solid rgba(42,212,255,.15); border-top-color:var(--cyan); border-radius:50%;
-    animation:sp .8s linear infinite; margin:0 auto 12px; }
+  .empty, .loading{ text-align:center; padding:48px 0; color:var(--text-faint); font-size:13px; }
+  .spin{ width:26px; height:26px; border:3px solid rgba(42,212,255,.15); border-top-color:var(--cyan); border-radius:50%; animation:sp .8s linear infinite; margin:0 auto 12px; }
   @keyframes sp{ to{ transform:rotate(360deg); } }
- 
+  .more{ display:flex; justify-content:center; padding:14px; }
   footer{ text-align:center; color:var(--text-faint); font-size:11.5px; padding:26px 0 6px; }
- 
-  @media (prefers-reduced-motion: reduce){
-    .live-dot, .spin{ animation:none; }
-  }
+  @media (prefers-reduced-motion: reduce){ .live-dot, .spin{ animation:none; } }
 </style>
 </head>
 <body>
 <div class="bg-grid"></div>
- 
-<!-- ============ LOGIN GATE ============ -->
+
+<!-- ============ LOGIN ============ -->
 <div id="gate">
   <div class="box">
     <div class="logo-mark">
-      <svg viewBox="0 0 240 88" xmlns="http://www.w3.org/2000/svg">
-        <rect x="0" y="20" width="34" height="12" fill="#00BFA5" rx="2"/>
-        <rect x="11" y="9" width="12" height="34" fill="#00BFA5" rx="2"/>
+      <svg viewBox="0 0 240 88" xmlns="http://www.w3.org/2000/svg" aria-label="BNH Medical">
+        <rect x="0" y="20" width="34" height="12" fill="#00BFA5" rx="2"/><rect x="11" y="9" width="12" height="34" fill="#00BFA5" rx="2"/>
         <text x="42" y="40" fill="#00567C" font-family="Arial, sans-serif" font-size="40" font-weight="bold">BNH</text>
         <text x="42" y="60" fill="#00567C" font-family="Arial, sans-serif" font-size="15" font-weight="bold" letter-spacing="0.5">MEDICAL</text>
       </svg>
@@ -243,469 +206,624 @@
     <h2>Acceso administrativo</h2>
     <p>Ingresa la clave para ver el panel de pagos.</p>
     <input type="password" id="gatePass" placeholder="Clave de acceso" onkeydown="if(event.key==='Enter')validarAcceso()">
-    <button onclick="validarAcceso()">Entrar al panel</button>
-    <p class="err" id="gateErr">Clave incorrecta. Intenta de nuevo.</p>
+    <button class="btn-primary" onclick="validarAcceso()">Entrar al panel</button>
+    <p id="gateErr" role="alert" style="display:none">Clave incorrecta. Intenta de nuevo.</p>
   </div>
 </div>
- 
-<!-- ============ APP SHELL ============ -->
+
+<!-- ============ APP ============ -->
 <div id="app">
   <header>
     <div class="left">
       <div class="mark">
-        <svg viewBox="0 0 240 88" xmlns="http://www.w3.org/2000/svg">
-          <rect x="0" y="20" width="34" height="12" fill="#00BFA5" rx="2"/>
-          <rect x="11" y="9" width="12" height="34" fill="#00BFA5" rx="2"/>
+        <svg viewBox="0 0 240 88" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="0" y="20" width="34" height="12" fill="#00BFA5" rx="2"/><rect x="11" y="9" width="12" height="34" fill="#00BFA5" rx="2"/>
           <text x="42" y="40" fill="#00567C" font-family="Arial, sans-serif" font-size="40" font-weight="bold">BNH</text>
           <text x="42" y="60" fill="#00567C" font-family="Arial, sans-serif" font-size="15" font-weight="bold" letter-spacing="0.5">MEDICAL</text>
         </svg>
       </div>
       <div>
         <h1>Panel de pagos <span class="live-dot" title="Datos en vivo"></span></h1>
-        <p class="sub">BNH Medical · Equipos &amp; Suministros</p>
+        <p class="sub">BNH Medical · Equipos &amp; Suministros · <span id="lastUpdate">—</span></p>
       </div>
     </div>
-    <button class="refresh" onclick="cargarDatos()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
-      Actualizar
-    </button>
+    <div class="actions">
+      <button class="btn ghost" onclick="exportarCSV()" title="Descarga las filas filtradas con los montos ya normalizados">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        Exportar CSV
+      </button>
+      <button class="btn" onclick="cargarDatos()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+        Actualizar
+      </button>
+    </div>
   </header>
- 
+
   <main>
     <div class="filters">
-      <div class="f">
-        <label>Desde</label>
-        <input type="date" id="fDesde" onchange="aplicarFiltros()">
-      </div>
-      <div class="f">
-        <label>Hasta</label>
-        <input type="date" id="fHasta" onchange="aplicarFiltros()">
-      </div>
-      <div class="f">
-        <label>Método de pago</label>
-        <select id="fTipo" onchange="aplicarFiltros()">
+      <div class="f"><label for="fDesde">Desde</label><input type="date" id="fDesde"></div>
+      <div class="f"><label for="fHasta">Hasta</label><input type="date" id="fHasta"></div>
+      <div class="f"><label for="fTipo">Método de pago</label>
+        <select id="fTipo">
           <option value="">Todos</option>
           <option value="Zelle">Zelle (USD)</option>
-          <option value="USD" data-moneda="USD">Transferencia (USD)</option>
+          <option value="USD">Transferencia (USD)</option>
           <option value="Bs">Bs</option>
           <option value="Binance">Binance (USDT)</option>
           <option value="Efectivo">Efectivo</option>
         </select>
       </div>
-      <div class="f">
-        <label>Concepto de pago</label>
-        <select id="fConcepto" onchange="aplicarFiltros()">
+      <div class="f"><label for="fConcepto">Concepto</label>
+        <select id="fConcepto">
           <option value="">Todos</option>
-          <option value="Inicial">Inicial</option>
-          <option value="Reserva">Reserva</option>
-          <option value="Pago IVA">Pago IVA</option>
-          <option value="Cuota viva">Cuota viva</option>
-          <option value="Servicio Técnico">Servicio Técnico</option>
+          <option>Inicial</option><option>Reserva</option><option>Pago IVA</option>
+          <option>Cuota viva</option><option>Servicio Técnico</option><option value="Otro">Otro / sin concepto</option>
         </select>
       </div>
-      
-      <div class="f">
-        <label>Empresa</label>
-        <select id="fEmpresa" onchange="aplicarFiltros()">
-          <option value="">Todas</option>
-        </select>
-      </div>
-      
-      <div class="f">
-        <label>Cliente</label>
-        <input type="text" id="fCliente" placeholder="Buscar por nombre..." oninput="aplicarFiltros()">
-      </div>
-      
-      <button class="clear" onclick="limpiarFiltros()">Limpiar filtros</button>
+      <div class="f"><label for="fEmpresa">Empresa</label><select id="fEmpresa"><option value="">Todas</option></select></div>
+      <div class="f" id="wrapEstatus" hidden><label for="fEstatus">Estatus</label><select id="fEstatus"><option value="">Todos</option></select></div>
+      <div class="f"><label for="fCliente">Cliente / titular / ref.</label><input type="search" id="fCliente" placeholder="Buscar…"></div>
+      <div class="f"><button class="btn ghost" style="justify-content:center" onclick="limpiarFiltros()">Limpiar filtros</button></div>
     </div>
- 
-    <div class="kpis" id="kpis">
-      <div class="kpi bs">
+
+    <div class="section-title">Por moneda</div>
+    <div class="kpis">
+      <div class="kpi hero a-violet">
+        <div class="label">Total equivalente USD</div>
+        <div class="value" id="kpiTotalUsd">$0,00</div>
+        <div class="count" id="kpiTotalCount">0 pagos</div>
+        <div class="note warn" id="kpiTotalNote"></div>
+      </div>
+      <div class="kpi a-blue">
         <div class="label">Bolívares</div>
         <div class="value" id="kpiBs">Bs 0,00</div>
         <div class="count" id="kpiBsCount">0 pagos</div>
-        <div class="conv" id="kpiBsUsd">≈ $0.00 USD<small>Monto ÷ Tasa Binance</small></div>
+        <div class="conv" id="kpiBsUsd">≈ $0,00</div>
+        <div class="note" id="kpiBsNote">Monto ÷ Tasa Binance</div>
       </div>
-      <div class="kpi usd"><div class="label">USD (Zelle / Transferencia)</div><div class="value" id="kpiUsd">$0.00</div><div class="count" id="kpiUsdCount">0 pagos</div></div>
-      <div class="kpi usdt"><div class="label">USDT (Binance)</div><div class="value" id="kpiUsdt">$0.00</div><div class="count" id="kpiUsdtCount">0 pagos</div></div>
-      <div class="kpi efectivo"><div class="label">Efectivo</div><div class="value" id="kpiEfectivo">$0.00</div><div class="count" id="kpiEfectivoCount">0 pagos</div></div>
-      <div class="kpi total"><div class="label">Total de pagos</div><div class="value" id="kpiTotal">0</div><div class="count">registrados</div></div>
-      <div class="kpi inicial"><div class="label">Inicial</div><div class="value" id="kpiInicial">0</div><div class="count" id="kpiInicialMonto">$0.00</div></div>
-      <div class="kpi reserva"><div class="label">Reserva</div><div class="value" id="kpiReserva">0</div><div class="count" id="kpiReservaMonto">$0.00</div></div>
-      <div class="kpi iva"><div class="label">Pago IVA</div><div class="value" id="kpiIva">0</div><div class="count" id="kpiIvaMonto">$0.00</div></div>
-      <div class="kpi cuotaviva"><div class="label">Cuota viva</div><div class="value" id="kpiCuotaViva">0</div><div class="count" id="kpiCuotaVivaMonto">$0.00</div></div>
-      <div class="kpi servtec"><div class="label">Servicio Técnico</div><div class="value" id="kpiServTec">0</div><div class="count" id="kpiServTecMonto">$0.00</div></div>
+      <div class="kpi a-green"><div class="label">USD (Zelle / Transf.)</div><div class="value" id="kpiUsd">$0,00</div><div class="count" id="kpiUsdCount">0 pagos</div></div>
+      <div class="kpi a-cyan"><div class="label">USDT (Binance)</div><div class="value" id="kpiUsdt">$0,00</div><div class="count" id="kpiUsdtCount">0 pagos</div></div>
+      <div class="kpi a-amber"><div class="label">Efectivo</div><div class="value" id="kpiEfectivo">$0,00</div><div class="count" id="kpiEfectivoCount">0 pagos</div></div>
     </div>
- 
+
+    <div class="section-title">Por concepto · montos en USD equivalente (Bs ÷ tasa)</div>
+    <div class="kpis" id="kpisConcepto"></div>
+
+    <div class="audit">
+      <div class="audit-head">
+        <div>
+          <h3>Control de calidad de los datos</h3>
+          <p>Filas que pueden hacer que el total no cuadre con tu análisis. Haz clic para ver solo esas filas.</p>
+        </div>
+      </div>
+      <div class="chips" id="auditChips"></div>
+      <div class="audit-detail" id="auditDetail"></div>
+    </div>
+
     <div class="grid2">
-      <div class="panel">
-        <h3>Pagos por fecha</h3>
-        <div class="chart-box"><canvas id="chartFecha"></canvas></div>
-      </div>
-      <div class="panel">
-        <h3>Distribución por moneda</h3>
-        <div class="chart-box"><canvas id="chartMoneda"></canvas></div>
-      </div>
+      <div class="panel"><h3>Pagos por fecha <small>USD equivalente</small></h3><div class="chart-box"><canvas id="chartFecha"></canvas></div></div>
+      <div class="panel"><h3>Distribución por moneda <small>USD equivalente</small></h3><div class="chart-box"><canvas id="chartMoneda"></canvas></div></div>
     </div>
- 
+
+    <div class="table-head">
+      <div class="section-title" style="margin:0">Detalle de pagos</div>
+      <div class="meta" id="tablaMeta"></div>
+    </div>
     <div class="table-wrap">
       <table>
-        <thead>
-          <tr>
-            <th>Fecha</th><th>Empresa</th><th>Cliente</th><th>Titular</th><th>Moneda</th><th>Monto</th><th>Comprobante</th>
-          </tr>
-        </thead>
-        <tbody id="tablaBody">
-          <tr><td colspan="7" class="loading"><div class="spin"></div>Cargando pagos...</td></tr>
-        </tbody>
+        <thead><tr>
+          <th>Fecha</th><th>Empresa</th><th>Cliente</th><th>Titular</th><th>Concepto</th><th>Método</th><th>Moneda</th>
+          <th class="num">Monto</th><th class="num">Tasa</th><th class="num">≈ USD</th><th>Comprobante</th>
+        </tr></thead>
+        <tbody id="tablaBody"><tr><td colspan="11" class="loading"><div class="spin"></div>Cargando pagos…</td></tr></tbody>
       </table>
+      <div class="more" id="tablaMore" hidden><button class="btn ghost" onclick="mostrarMas()">Mostrar más</button></div>
     </div>
- 
+
     <footer>BNH Medical &middot; Panel de pagos interno</footer>
   </main>
 </div>
- 
+
 <script>
-  const PIN_ADMIN = 'BNH2025';
-  let pagosOriginal = [];
-  let chartFecha, chartMoneda;
-  
-  const chartColors = {
-    grid:'rgba(120,190,255,.08)', text:'#8296b3',
-    cyan:'#2ad4ff', blue:'#3d6bff', green:'#34e6a8', amber:'#ffb648'
-  };
+'use strict';
+/* =====================================================================
+   CONFIGURACIÓN
+   ===================================================================== */
+const PIN_ADMIN = 'BNH2025';   // igual que tu versión original (gas-shim.js / doPost dependen de este flujo)
+const MONEDAS  = ['Bs', 'USD', 'USDT', 'Efectivo'];
+const CONCEPTOS = [
+  { key:'Inicial',          accent:'a-blue'   },
+  { key:'Reserva',          accent:'a-green'  },
+  { key:'Pago IVA',         accent:'a-cyan'   },
+  { key:'Cuota viva',       accent:'a-amber'  },
+  { key:'Servicio Técnico', accent:'a-violet' },
+];
+const PAGE = 250;
+const C = { grid:'rgba(120,190,255,.08)', text:'#8296b3', cyan:'#2ad4ff', blue:'#3d6bff', green:'#34e6a8', amber:'#ffb648' };
 
-  function validarAcceso(){
-    const val = document.getElementById('gatePass').value.trim();
-    if(val === PIN_ADMIN){
-      document.getElementById('gate').style.display = 'none';
-      document.getElementById('app').style.display = 'block';
-      cargarDatos();
-    } else {
-      document.getElementById('gateErr').style.display = 'block';
-    }
+let PAGOS = [];          // registros normalizados
+let FILTRADOS = [];
+let auditActivo = '';    // filtro de auditoría activo
+let visibles = PAGE;
+let chartFecha, chartMoneda;
+
+/* =====================================================================
+   ACCESO
+   ===================================================================== */
+// Login SIN cambios respecto a tu versión original.
+function validarAcceso(){
+  const val = document.getElementById('gatePass').value.trim();
+  if (val === PIN_ADMIN){
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    cargarDatos();
+  } else {
+    document.getElementById('gateErr').style.display = 'block';
   }
+}
 
-  function cargarDatos(){
-    document.getElementById('tablaBody').innerHTML =
-      '<tr><td colspan="7" class="loading"><div class="spin"></div>Cargando pagos...</td></tr>';
-
-    if (typeof google !== 'undefined' && google.script){
-      google.script.run
-        .withSuccessHandler(function(datos){ 
-           pagosOriginal = datos || []; 
-           poblarFiltroEmpresa();
-           aplicarFiltros(); 
-        })
-        .withFailureHandler(function(err){
-          document.getElementById('tablaBody').innerHTML =
-            '<tr><td colspan="7" class="empty">Error al cargar los pagos: ' + err + '</td></tr>';
-        })
-        .obtenerPagos();
-    } else {
-      pagosOriginal = datosEjemplo();
-      poblarFiltroEmpresa();
-      aplicarFiltros();
-    }
-  }
-
-  function poblarFiltroEmpresa() {
-    const select = document.getElementById('fEmpresa');
-    const valorActual = select.value; 
-    
-    select.innerHTML = '<option value="">Todas</option>';
-    
-    const empresas = [...new Set(pagosOriginal.map(p => p.empresa).filter(e => e && e.toString().trim() !== ''))];
-    empresas.sort();
-    
-    empresas.forEach(emp => {
-      const opt = document.createElement('option');
-      opt.value = emp;
-      opt.textContent = emp;
-      select.appendChild(opt);
-    });
-    
-    if (empresas.includes(valorActual)) {
-      select.value = valorActual;
-    }
-  }
-
-  function aplicarFiltros(){
-    const desde = document.getElementById('fDesde').value;
-    const hasta = document.getElementById('fHasta').value;
-    const tipo = document.getElementById('fTipo').value;
-    const concepto = document.getElementById('fConcepto').value;
-    const cliente = document.getElementById('fCliente').value.toLowerCase().trim();
-    const empresaFiltro = document.getElementById('fEmpresa').value;
-
-    let filtrados = pagosOriginal.filter(p => {
-      const fecha = p.fecha || p.fechaPago;
-      const nom = p.cliente || p.nombre || '';
-      const emp = p.empresa || ''; 
-      const tipoP = p.tipoPago || p.moneda;
-
-      if (desde && fecha < desde) return false;
-      if (hasta && fecha > hasta) return false;
-      if (tipo && tipoP !== tipo) return false;
-      if (concepto && p.conceptoPago !== concepto) return false;
-      if (cliente && !nom.toLowerCase().includes(cliente)) return false;
-      if (empresaFiltro && emp !== empresaFiltro) return false;
-      
-      return true;
-    });
-
-    renderKPIs(filtrados);
-    renderTabla(filtrados);
-    renderCharts(filtrados);
-  }
-
-  function limpiarFiltros(){
-    document.getElementById('fDesde').value = '';
-    document.getElementById('fHasta').value = '';
-    document.getElementById('fTipo').value = '';
-    document.getElementById('fConcepto').value = '';
-    document.getElementById('fCliente').value = '';
-    document.getElementById('fEmpresa').value = '';
+/* =====================================================================
+   CARGA
+   ===================================================================== */
+function cargarDatos(){
+  document.getElementById('tablaBody').innerHTML =
+    '<tr><td colspan="11" class="loading"><div class="spin"></div>Cargando pagos…</td></tr>';
+  const ok = datos => {
+    PAGOS = (Array.isArray(datos) ? datos : []).map(normalizar);
+    marcarDuplicados(PAGOS);
+    poblarSelect('fEmpresa', PAGOS.map(p => p.empresa), 'Todas');
+    const est = PAGOS.map(p => p.estatus).filter(Boolean);
+    document.getElementById('wrapEstatus').hidden = !est.length;
+    poblarSelect('fEstatus', est, 'Todos');
+    document.getElementById('lastUpdate').textContent =
+      'actualizado ' + new Date().toLocaleTimeString('es-VE', {hour:'2-digit', minute:'2-digit'});
     aplicarFiltros();
+  };
+  if (typeof google !== 'undefined' && google.script && google.script.run){
+    google.script.run
+      .withSuccessHandler(ok)
+      .withFailureHandler(err => {
+        document.getElementById('tablaBody').innerHTML =
+          '<tr><td colspan="11" class="empty">Error al cargar los pagos: ' + esc(err && err.message || err) + '</td></tr>';
+      })
+      .obtenerPagos();
+  } else {
+    ok(datosEjemplo());
   }
+}
 
-  function parseMonto(m){
-    if (typeof m === 'number') return m;
-    if (!m) return 0;
-    const limpio = String(m).replace(/[^0-9.,-]/g, '');
-    const normalizado = limpio.replace(/,/g, '');
-    const num = parseFloat(normalizado);
-    return isNaN(num) ? 0 : num;
+/* =====================================================================
+   NORMALIZACIÓN (aquí estaba el origen de los descuadres)
+   ===================================================================== */
+const sinAcentos = s => String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g,'');
+const clave = s => sinAcentos(s).toLowerCase().replace(/\s+/g,' ').trim();
+const pick = (o, ...ks) => { for (const k of ks){ if (o[k] !== undefined && o[k] !== null && o[k] !== '') return o[k]; } return ''; };
+
+/**
+ * Convierte cualquier monto a número, sea 1234.5 · "1.234,50" · "1,234.50" · "Bs 305.745,00" · "$80".
+ * Regla: si hay "," y "." → el último es el decimal. Si hay un solo separador seguido de
+ * exactamente 3 dígitos ("15.230", "1,500") se toma como miles; si no, como decimal.
+ */
+function parseNumero(v){
+  if (typeof v === 'number') return isFinite(v) ? v : NaN;
+  if (v === null || v === undefined) return NaN;
+  const raw = String(v).trim();
+  if (!raw) return NaN;
+  const neg = /^\(.*\)$/.test(raw) || /-\s*\d/.test(raw);
+  let s = raw.replace(/[^\d.,]/g, '');
+  if (!s) return NaN;
+  const lc = s.lastIndexOf(','), lp = s.lastIndexOf('.');
+  if (lc > -1 && lp > -1){
+    const dec = lc > lp ? ',' : '.', mil = dec === ',' ? '.' : ',';
+    s = s.split(mil).join('').replace(dec, '.');
+  } else if (lc > -1 || lp > -1){
+    const sep = lc > -1 ? ',' : '.';
+    const partes = s.split(sep);
+    if (partes.length > 2) s = partes.join('');
+    else if (partes[1].length === 3 && partes[0] !== '0' && partes[0] !== '') s = partes.join('');
+    else s = (partes[0] || '0') + '.' + partes[1];
   }
+  const n = parseFloat(s);
+  return isNaN(n) ? NaN : (neg ? -n : n);
+}
 
-  // Tasa Binance (columna V de la hoja PAGOS). Acepta número o texto ("36,50" / "36.50")
-  function parseTasa(t){
-    if (typeof t === 'number') return t;
-    if (!t) return 0;
-    let s = String(t).replace(/[^0-9.,]/g, '');
-    if (s.indexOf(',') !== -1 && s.indexOf('.') !== -1){
-      // el último separador es el decimal
-      if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.');
-      else s = s.replace(/,/g, '');
-    } else if (s.indexOf(',') !== -1){
-      s = s.replace(',', '.');
-    }
-    const n = parseFloat(s);
-    return isNaN(n) ? 0 : n;
+/** Fecha → "AAAA-MM-DD". Acepta ISO, dd/mm/aaaa, Date, serial de Sheets o texto tipo Date.toString(). */
+function parseFecha(v){
+  if (!v && v !== 0) return '';
+  const iso = d => isNaN(d) ? '' :
+    d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  if (v instanceof Date) return iso(v);
+  if (typeof v === 'number'){
+    if (v > 20000 && v < 80000){ const d = new Date(Date.UTC(1899,11,30) + v*864e5); return iso(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); }
+    return iso(new Date(v));
   }
-
-  function getTasa(p){
-    return parseTasa(p.tasaBinance !== undefined ? p.tasaBinance : (p.tasa !== undefined ? p.tasa : p.tasaBinanceV));
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return m[1] + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
+  m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (m){
+    let y = +m[3]; if (y < 100) y += 2000;
+    const d = +m[1], mo = +m[2];
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return y + '-' + String(mo).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+    return '';
   }
+  const t = Date.parse(s);
+  return isNaN(t) ? '' : iso(new Date(t));
+}
 
-  // Monto en USD para los gráficos: los pagos en Bs se convierten (monto / Tasa Binance);
-  // el resto de monedas se toma tal cual. Si un pago en Bs no tiene tasa, no se suma.
-  function montoParaGrafico(p){
-    const m = p.moneda || mapMoneda(p.tipoPago);
-    const monto = parseMonto(p.monto);
-    if (m === 'Bs'){
-      const tasa = getTasa(p);
-      return tasa > 0 ? monto / tasa : 0;
-    }
-    return monto;
+function normMoneda(v){
+  const k = clave(v);
+  if (!k) return '';
+  if (k.includes('usdt') || k.includes('binance') || k.includes('tether')) return 'USDT';
+  if (k.includes('efectivo') || k.includes('cash')) return 'Efectivo';
+  if (/^(bs|bss|bsf|bsd|ves|veb)\b/.test(k) || k.includes('bolivar') || k.includes('pago movil')) return 'Bs';
+  if (k === 'usd' || k === '$' || k.includes('us$') || k.includes('dolar') || k.includes('zelle') || k.includes('transfer')) return 'USD';
+  return '';
+}
+function normMetodo(v, moneda){
+  const k = clave(v);
+  if (k.includes('zelle')) return 'Zelle';
+  if (k.includes('binance') || k.includes('usdt')) return 'Binance';
+  if (k.includes('efectivo') || k.includes('cash')) return 'Efectivo';
+  if (/^(bs|ves)\b/.test(k) || k.includes('bolivar') || k.includes('pago movil')) return 'Bs';
+  if (k.includes('usd') || k.includes('transfer') || k.includes('dolar')) return 'USD';
+  return { Bs:'Bs', USDT:'Binance', Efectivo:'Efectivo', USD:'USD' }[moneda] || '';
+}
+function normConcepto(v){
+  const k = clave(v);
+  if (!k) return 'Otro';
+  if (k.includes('inicial')) return 'Inicial';
+  if (k.includes('reserva')) return 'Reserva';
+  if (k.includes('cuota')) return 'Cuota viva';      // antes que IVA: "cuota v-IVA" contiene "iva"
+  if (/\biva\b/.test(k)) return 'Pago IVA';
+  if (k.includes('servicio') || k.includes('tecnico')) return 'Servicio Técnico';
+  return 'Otro';
+}
+
+function normalizar(p, i){
+  const montoRaw = pick(p, 'monto', 'MONTO');
+  const monto = parseNumero(montoRaw);
+  const tipoRaw = pick(p, 'tipoPago', 'metodoPago', 'metodo');
+  const monedaRaw = pick(p, 'moneda', 'MONEDA');
+  const moneda = normMoneda(monedaRaw) || normMoneda(tipoRaw);
+  const tasa = parseNumero(pick(p, 'tasaBinance', 'tasa', 'tasaBinanceV'));
+  const conceptoRaw = pick(p, 'conceptoPago', 'concepto');
+  const fechaRaw = pick(p, 'fecha', 'fechaPago');
+  const r = {
+    i,
+    fecha: parseFecha(fechaRaw),
+    fechaRaw,
+    empresa: String(pick(p, 'empresa')).trim(),
+    cliente: String(pick(p, 'cliente', 'nombre')).trim(),
+    titular: String(pick(p, 'titular')).trim(),
+    referencia: String(pick(p, 'referencia', 'ref')).trim(),
+    estatus: String(pick(p, 'estatus', 'estado')).trim().toUpperCase(),
+    comprobante: String(pick(p, 'comprobante')).trim(),
+    url: String(pick(p, 'comprobanteUrl', 'soporte', 'url')).trim(),
+    monedaRaw, tipoRaw, conceptoRaw, montoRaw,
+    moneda,
+    metodo: normMetodo(tipoRaw, moneda),
+    concepto: normConcepto(conceptoRaw),
+    monto: isNaN(monto) ? 0 : monto,
+    tasa: isNaN(tasa) ? 0 : tasa,
+    usd: null,
+    flags: new Set(),
+  };
+  if (moneda === 'Bs') r.usd = r.tasa > 0 ? r.monto / r.tasa : null;
+  else if (moneda) r.usd = r.monto;
+
+  if (!moneda) r.flags.add('moneda');
+  if (r.concepto === 'Otro') r.flags.add('concepto');
+  if (moneda === 'Bs' && !(r.tasa > 0)) r.flags.add('sinTasa');
+  if (moneda === 'Bs' && r.tasa > 0 && r.tasa < 1) r.flags.add('tasaRara');
+  if (!r.fecha) r.flags.add('fecha');
+  if (isNaN(monto) || monto === 0) r.flags.add('monto');
+  if (typeof montoRaw === 'string' && montoRaw.trim() && !isNaN(monto)) r.flags.add('montoTexto');
+  return r;
+}
+
+function marcarDuplicados(lista){
+  const vistos = new Map();
+  lista.forEach(r => {
+    const ref = clave(r.referencia).replace(/[^a-z0-9]/g,'');
+    const refValida = ref.length >= 4 && !/^(noencontrad|na|sinref|nan)/.test(ref);
+    const k = refValida
+      ? 'R|' + ref + '|' + r.monto.toFixed(2)
+      : 'F|' + r.fecha + '|' + clave(r.cliente) + '|' + r.moneda + '|' + r.monto.toFixed(2);
+    if (vistos.has(k)){ r.flags.add('duplicado'); vistos.get(k).flags.add('duplicado'); }
+    else vistos.set(k, r);
+  });
+}
+
+const AUDIT = {
+  moneda:     { t:'Moneda no reconocida',       d:'No suman en ningún total por moneda.' },
+  concepto:   { t:'Concepto vacío / distinto',  d:'No entran en ninguna tarjeta de concepto.' },
+  sinTasa:    { t:'Bs sin tasa Binance',        d:'Suman en Bs pero NO en el equivalente USD.' },
+  tasaRara:   { t:'Tasa menor a 1',             d:'Probablemente la tasa está invertida o mal escrita.' },
+  fecha:      { t:'Fecha inválida',             d:'Se excluyen cuando filtras por rango de fechas.' },
+  monto:      { t:'Monto vacío o 0',            d:'Cuentan como pago pero no suman.' },
+  montoTexto: { t:'Monto guardado como texto',  d:'Se interpretó automáticamente; revisa que el valor sea correcto.' },
+  duplicado:  { t:'Posibles duplicados',        d:'Misma referencia y monto (o misma fecha, cliente y monto).' },
+};
+
+/* =====================================================================
+   FILTROS
+   ===================================================================== */
+function poblarSelect(id, valores, etiquetaTodos){
+  const sel = document.getElementById(id);
+  const actual = sel.value;
+  const unicos = [...new Set(valores.filter(v => v && String(v).trim()))].sort((a,b) => a.localeCompare(b,'es'));
+  sel.innerHTML = '<option value="">' + etiquetaTodos + '</option>' +
+    unicos.map(v => '<option value="' + esc(v) + '">' + esc(v) + '</option>').join('');
+  if (unicos.includes(actual)) sel.value = actual;
+}
+
+function filtrarBase(){
+  const v = id => document.getElementById(id).value;
+  const desde = v('fDesde'), hasta = v('fHasta'), tipo = v('fTipo'), concepto = v('fConcepto');
+  const empresa = v('fEmpresa'), estatus = v('fEstatus');
+  const q = clave(v('fCliente'));
+  return PAGOS.filter(r => {
+    if (desde && (!r.fecha || r.fecha < desde)) return false;
+    if (hasta && (!r.fecha || r.fecha > hasta)) return false;
+    if (tipo && r.metodo !== tipo) return false;
+    if (concepto && r.concepto !== concepto) return false;
+    if (empresa && r.empresa !== empresa) return false;
+    if (estatus && r.estatus !== estatus) return false;
+    if (q && !clave(r.cliente + ' ' + r.titular + ' ' + r.referencia + ' ' + r.empresa).includes(q)) return false;
+    return true;
+  });
+}
+
+function aplicarFiltros(){
+  const base = filtrarBase();
+  FILTRADOS = auditActivo ? base.filter(r => r.flags.has(auditActivo)) : base;
+  visibles = PAGE;
+  renderKPIs(base);          // los KPIs siempre reflejan los filtros normales
+  renderAuditoria(base);
+  renderTabla();
+  renderCharts(base);
+}
+
+function limpiarFiltros(){
+  ['fDesde','fHasta','fTipo','fConcepto','fEmpresa','fEstatus','fCliente'].forEach(id => document.getElementById(id).value = '');
+  auditActivo = '';
+  aplicarFiltros();
+}
+
+/* =====================================================================
+   RENDER
+   ===================================================================== */
+const nf = new Intl.NumberFormat('es-VE', { minimumFractionDigits:2, maximumFractionDigits:2 });
+function fmt(n, moneda){ const s = nf.format(Number(n) || 0); return moneda === 'Bs' ? 'Bs ' + s : '$' + s; }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function setTxt(id, t){ document.getElementById(id).textContent = t; }
+const plural = (n, s, p) => n + ' ' + (n === 1 ? s : (p || s + 's'));
+
+function totales(lista){
+  const t = { count:lista.length, usd:0, sinTasa:0, sinMoneda:0, monto:{}, n:{} };
+  MONEDAS.forEach(m => { t.monto[m] = 0; t.n[m] = 0; });
+  lista.forEach(r => {
+    if (r.moneda){ t.monto[r.moneda] += r.monto; t.n[r.moneda]++; } else t.sinMoneda++;
+    if (r.usd !== null) t.usd += r.usd;
+    else if (r.moneda === 'Bs') t.sinTasa++;
+  });
+  return t;
+}
+
+function renderKPIs(lista){
+  const t = totales(lista);
+  setTxt('kpiTotalUsd', fmt(t.usd, 'USD'));
+  setTxt('kpiTotalCount', plural(t.count, 'pago') + ' registrados');
+  const avisos = [];
+  if (t.sinTasa) avisos.push(plural(t.sinTasa, 'pago') + ' en Bs sin tasa');
+  if (t.sinMoneda) avisos.push(plural(t.sinMoneda, 'pago') + ' sin moneda válida');
+  setTxt('kpiTotalNote', avisos.length ? 'No incluye: ' + avisos.join(' · ') : '');
+
+  setTxt('kpiBs', fmt(t.monto.Bs, 'Bs'));
+  setTxt('kpiBsCount', plural(t.n.Bs, 'pago'));
+  const bsUsd = lista.reduce((a, r) => a + (r.moneda === 'Bs' && r.usd !== null ? r.usd : 0), 0);
+  setTxt('kpiBsUsd', '≈ ' + fmt(bsUsd, 'USD'));
+  setTxt('kpiBsNote', 'Monto ÷ Tasa Binance' + (t.sinTasa ? ' · ' + t.sinTasa + ' sin tasa' : ''));
+  document.getElementById('kpiBsNote').className = 'note' + (t.sinTasa ? ' warn' : '');
+
+  setTxt('kpiUsd', fmt(t.monto.USD, 'USD'));          setTxt('kpiUsdCount', plural(t.n.USD, 'pago'));
+  setTxt('kpiUsdt', fmt(t.monto.USDT, 'USD'));        setTxt('kpiUsdtCount', plural(t.n.USDT, 'pago'));
+  setTxt('kpiEfectivo', fmt(t.monto.Efectivo, 'USD')); setTxt('kpiEfectivoCount', plural(t.n.Efectivo, 'pago'));
+
+  // Conceptos: SIEMPRE en USD equivalente (antes se mezclaban Bs con $).
+  const grupos = {};
+  [...CONCEPTOS.map(c => c.key), 'Otro'].forEach(k => grupos[k] = { n:0, usd:0, sinTasa:0 });
+  lista.forEach(r => {
+    const g = grupos[r.concepto];
+    g.n++;
+    if (r.usd !== null) g.usd += r.usd; else if (r.moneda === 'Bs') g.sinTasa++;
+  });
+  const tarjetas = CONCEPTOS.map(c => ({ ...c, label:c.key }));
+  if (grupos.Otro.n) tarjetas.push({ key:'Otro', label:'Otro / sin concepto', accent:'a-red' });
+  document.getElementById('kpisConcepto').innerHTML = tarjetas.map(c => {
+    const g = grupos[c.key];
+    return '<div class="kpi ' + c.accent + '">' +
+      '<div class="label">' + esc(c.label) + '</div>' +
+      '<div class="value">' + fmt(g.usd, 'USD') + '</div>' +
+      '<div class="count">' + plural(g.n, 'pago') + '</div>' +
+      (g.sinTasa ? '<div class="note warn">+ ' + plural(g.sinTasa, 'pago') + ' en Bs sin tasa</div>' : '') +
+      '</div>';
+  }).join('');
+}
+
+function renderAuditoria(lista){
+  const cuenta = {};
+  Object.keys(AUDIT).forEach(k => cuenta[k] = 0);
+  lista.forEach(r => r.flags.forEach(f => cuenta[f]++));
+  const total = Object.values(cuenta).reduce((a,b) => a + b, 0);
+  document.getElementById('auditChips').innerHTML = total === 0
+    ? '<span class="chip ok zero"><b>✓</b> Sin observaciones en los datos filtrados</span>'
+    : Object.keys(AUDIT).map(k => {
+        const n = cuenta[k];
+        return '<button type="button" class="chip' + (n ? '' : ' zero') + (auditActivo === k ? ' active' : '') + '" ' +
+          (n ? 'onclick="toggleAudit(\'' + k + '\')"' : 'disabled') + ' title="' + esc(AUDIT[k].d) + '">' +
+          esc(AUDIT[k].t) + ' <b>' + n + '</b></button>';
+      }).join('');
+
+  const det = document.getElementById('auditDetail');
+  if (!auditActivo){ det.innerHTML = ''; return; }
+  let extra = '';
+  if (auditActivo === 'moneda' || auditActivo === 'concepto'){
+    const campo = auditActivo === 'moneda' ? 'monedaRaw' : 'conceptoRaw';
+    const vals = [...new Set(lista.filter(r => r.flags.has(auditActivo)).map(r => String(r[campo] || '(vacío)')))].slice(0, 12);
+    extra = ' Valores encontrados: ' + vals.map(v => '<code>' + esc(v) + '</code>').join(', ');
   }
+  det.innerHTML = '<strong>' + esc(AUDIT[auditActivo].t) + ':</strong> ' + esc(AUDIT[auditActivo].d) + extra +
+    ' · <a href="#" class="link" onclick="toggleAudit(\'\');return false;">Quitar filtro</a>';
+}
+function toggleAudit(k){ auditActivo = auditActivo === k ? '' : k; aplicarFiltros(); }
 
-  function fmt(n, moneda){
-    const num = (Number(n) || 0).toLocaleString('es-VE', {minimumFractionDigits:2, maximumFractionDigits:2});
-    return moneda === 'Bs' ? ('Bs ' + num) : ('$' + num);
+function formatFecha(iso){
+  if (!iso) return '';
+  const p = iso.split('-');
+  return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso;
+}
+function urlSegura(u){ return /^https?:\/\//i.test(u) ? u : ''; }
+
+function renderTabla(){
+  const body = document.getElementById('tablaBody');
+  const lista = [...FILTRADOS].sort((a,b) => (b.fecha || '').localeCompare(a.fecha || '') || b.i - a.i);
+  const suma = totales(lista);
+  setTxt('tablaMeta', plural(lista.length, 'pago') + ' · ≈ ' + fmt(suma.usd, 'USD') + (auditActivo ? ' · filtro: ' + AUDIT[auditActivo].t : ''));
+  if (!lista.length){
+    body.innerHTML = '<tr><td colspan="11" class="empty">No hay pagos que coincidan con los filtros.</td></tr>';
+    document.getElementById('tablaMore').hidden = true;
+    return;
   }
+  const dash = '<span class="muted">—</span>';
+  body.innerHTML = lista.slice(0, visibles).map(r => {
+    const url = urlSegura(r.url);
+    const comp = url ? '<a class="link" href="' + esc(url) + '" target="_blank" rel="noopener">Ver archivo</a>'
+                     : (r.comprobante ? esc(r.comprobante) : dash);
+    const flags = [...r.flags].map(f => AUDIT[f].t).join(' · ');
+    const pill = r.moneda ? '<span class="pill ' + r.moneda + '">' + r.moneda + '</span>'
+                          : '<span class="pill X">' + esc(r.monedaRaw || '?') + '</span>';
+    return '<tr' + (flags ? ' class="flag"' : '') + '>' +
+      '<td>' + (r.fecha ? formatFecha(r.fecha) : '<span class="muted">' + esc(r.fechaRaw || '—') + '</span>') +
+        (flags ? '<span class="warn-ico" title="' + esc(flags) + '">⚠</span>' : '') + '</td>' +
+      '<td>' + (esc(r.empresa) || dash) + '</td>' +
+      '<td>' + (esc(r.cliente) || dash) + '</td>' +
+      '<td>' + (esc(r.titular) || dash) + '</td>' +
+      '<td>' + (r.concepto === 'Otro' ? '<span class="muted">' + (esc(r.conceptoRaw) || '—') + '</span>' : esc(r.concepto)) + '</td>' +
+      '<td>' + (esc(r.metodo) || dash) + '</td>' +
+      '<td>' + pill + '</td>' +
+      '<td class="num">' + fmt(r.monto, r.moneda) + '</td>' +
+      '<td class="num">' + (r.moneda === 'Bs' ? (r.tasa > 0 ? nf.format(r.tasa) : '<span style="color:var(--amber)">sin tasa</span>') : dash) + '</td>' +
+      '<td class="num">' + (r.usd !== null ? fmt(r.usd, 'USD') : dash) + '</td>' +
+      '<td>' + comp + '</td></tr>';
+  }).join('');
+  const more = document.getElementById('tablaMore');
+  more.hidden = lista.length <= visibles;
+  if (!more.hidden) more.querySelector('button').textContent = 'Mostrar más (' + (lista.length - visibles) + ' restantes)';
+}
+function mostrarMas(){ visibles += PAGE; renderTabla(); }
 
-  function mapMoneda(tipoPago){
-    return { Zelle:'USD', USD:'USD', Bs:'Bs', Binance:'USDT', Efectivo:'Efectivo' }[tipoPago] || tipoPago;
-  }
-
-  function renderKPIs(datos){
-    const grupos = { Bs:{monto:0,count:0}, USD:{monto:0,count:0}, USDT:{monto:0,count:0}, Efectivo:{monto:0,count:0} };
-    let bsEnUsd = 0;       // Bs convertidos a USD (monto / tasa Binance)
-    let bsSinTasa = 0;     // pagos en Bs sin tasa válida (no se pueden convertir)
-    
-    datos.forEach(p => {
-      const m = p.moneda || mapMoneda(p.tipoPago);
-      if(grupos[m]){ grupos[m].monto += parseMonto(p.monto); grupos[m].count += 1; }
-
-      if (m === 'Bs'){
-        const tasa = getTasa(p);
-        if (tasa > 0) bsEnUsd += parseMonto(p.monto) / tasa;
-        else bsSinTasa += 1;
+function renderCharts(lista){
+  if (typeof Chart === 'undefined'){
+    document.querySelectorAll('.chart-box').forEach(box => {
+      if (!box.querySelector('.chart-empty')){
+        box.querySelector('canvas').hidden = true;
+        box.insertAdjacentHTML('beforeend', '<div class="chart-empty">No se pudo cargar la librería de gráficos.</div>');
       }
     });
-
-    document.getElementById('kpiBs').textContent = fmt(grupos.Bs.monto, 'Bs');
-    document.getElementById('kpiBsCount').textContent = grupos.Bs.count + ' pagos';
-    document.getElementById('kpiBsUsd').innerHTML =
-      '≈ ' + fmt(bsEnUsd, 'USD') + ' USD' +
-      '<small>Monto ÷ Tasa Binance' + (bsSinTasa ? ' · ' + bsSinTasa + ' sin tasa' : '') + '</small>';
-    
-    document.getElementById('kpiUsd').textContent = fmt(grupos.USD.monto, 'USD');
-    document.getElementById('kpiUsdCount').textContent = grupos.USD.count + ' pagos';
-    
-    document.getElementById('kpiUsdt').textContent = fmt(grupos.USDT.monto, 'USDT');
-    document.getElementById('kpiUsdtCount').textContent = grupos.USDT.count + ' pagos';
-    
-    document.getElementById('kpiEfectivo').textContent = fmt(grupos.Efectivo.monto, 'Efectivo');
-    document.getElementById('kpiEfectivoCount').textContent = grupos.Efectivo.count + ' pagos';
-    
-    document.getElementById('kpiTotal').textContent = datos.length;
-
-    const gruposConcepto = {
-      'Inicial':          {monto:0, count:0},
-      'Reserva':          {monto:0, count:0},
-      'Pago IVA':         {monto:0, count:0},
-      'Cuota viva':       {monto:0, count:0},
-      'Servicio Técnico': {monto:0, count:0}
-    };
-
-    datos.forEach(p => {
-      const c = p.conceptoPago;
-      if(gruposConcepto[c]){ gruposConcepto[c].monto += parseMonto(p.monto); gruposConcepto[c].count += 1; }
-    });
-
-    document.getElementById('kpiInicial').textContent = gruposConcepto['Inicial'].count;
-    document.getElementById('kpiInicialMonto').textContent = fmt(gruposConcepto['Inicial'].monto, 'USD');
-
-    document.getElementById('kpiReserva').textContent = gruposConcepto['Reserva'].count;
-    document.getElementById('kpiReservaMonto').textContent = fmt(gruposConcepto['Reserva'].monto, 'USD');
-
-    document.getElementById('kpiIva').textContent = gruposConcepto['Pago IVA'].count;
-    document.getElementById('kpiIvaMonto').textContent = fmt(gruposConcepto['Pago IVA'].monto, 'USD');
-
-    document.getElementById('kpiCuotaViva').textContent = gruposConcepto['Cuota viva'].count;
-    document.getElementById('kpiCuotaVivaMonto').textContent = fmt(gruposConcepto['Cuota viva'].monto, 'USD');
-
-    document.getElementById('kpiServTec').textContent = gruposConcepto['Servicio Técnico'].count;
-    document.getElementById('kpiServTecMonto').textContent = fmt(gruposConcepto['Servicio Técnico'].monto, 'USD');
+    return;
   }
+  const porFecha = {};
+  lista.forEach(r => { if (r.fecha && r.usd !== null) porFecha[r.fecha] = (porFecha[r.fecha] || 0) + r.usd; });
+  const fechas = Object.keys(porFecha).sort();
+  const mono = { family:"'JetBrains Mono', monospace", size:10.5 };
 
-  function formatFecha(iso){
-    if(!iso) return '—';
-    const partes = iso.split('-');
-    if(partes.length !== 3) return iso;
-    return `${partes[2]}/${partes[1]}/${partes[0]}`;
-  }
-
-  function renderTabla(datos){
-    const body = document.getElementById('tablaBody');
-    if(!datos.length){
-      body.innerHTML = '<tr><td colspan="7" class="empty">No hay pagos que coincidan con los filtros.</td></tr>';
-      return;
+  const ctx1 = document.getElementById('chartFecha').getContext('2d');
+  if (chartFecha) chartFecha.destroy();
+  const grad = ctx1.createLinearGradient(0, 0, 0, 260);
+  grad.addColorStop(0, 'rgba(42,212,255,.35)'); grad.addColorStop(1, 'rgba(42,212,255,0)');
+  chartFecha = new Chart(ctx1, {
+    type:'line',
+    data:{ labels:fechas.map(formatFecha), datasets:[{
+      data:fechas.map(f => porFecha[f]), borderColor:C.cyan, backgroundColor:grad, borderWidth:2, fill:true, tension:.3,
+      pointRadius:fechas.length > 60 ? 0 : 2.5, pointHoverRadius:4, pointBackgroundColor:C.cyan }] },
+    options:{
+      responsive:true, maintainAspectRatio:false, interaction:{ mode:'index', intersect:false },
+      plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:c => ' ' + fmt(c.parsed.y, 'USD') } } },
+      scales:{
+        x:{ grid:{ color:C.grid }, ticks:{ color:C.text, font:mono, maxTicksLimit:12, maxRotation:0 } },
+        y:{ beginAtZero:true, grid:{ color:C.grid }, ticks:{ color:C.text, font:mono, callback:v => '$' + nf.format(v).replace(/,00$/, '') } }
+      }
     }
-    const ordenados = [...datos].sort((a,b) => {
-      const fa = a.fecha || a.fechaPago || '';
-      const fb = b.fecha || b.fechaPago || '';
-      return fb.localeCompare(fa);
-    });
-    
-    body.innerHTML = ordenados.map(p => {
-      const moneda = p.moneda || mapMoneda(p.tipoPago);
-      const fechaOriginal = p.fecha || p.fechaPago;
-      const nombreCli = p.cliente || p.nombre || '—';
-      const empresaStr = p.empresa || '—'; 
-      const fileUrl = p.comprobanteUrl || '#';
-      const fileTag = p.comprobanteUrl ? `<a class="link" href="${fileUrl}" target="_blank">Ver archivo</a>` : `<a class="link" href="#" onclick="return false;">${p.comprobante || 'Ver'}</a>`;
-      
-      return `
-      <tr>
-        <td>${formatFecha(fechaOriginal)}</td>
-        <td>${empresaStr}</td>
-        <td>${nombreCli}</td>
-        <td>${p.titular || '—'}</td>
-        <td><span class="pill ${moneda}">${moneda || '—'}</span></td>
-        <td>${fmt(parseMonto(p.monto), moneda)}</td>
-        <td>${fileTag}</td>
-      </tr>
-    `;
-    }).join('');
-  }
+  });
 
-  function renderCharts(datos){
-    if (typeof Chart === 'undefined') return;
-
-    const porFecha = {};
-    datos.forEach(p => {
-      const f = p.fecha || p.fechaPago || 'Sin fecha';
-      porFecha[f] = (porFecha[f] || 0) + montoParaGrafico(p);
-    });
-    const fechas = Object.keys(porFecha).sort();
-    
-    const elFecha = document.getElementById('chartFecha');
-    const ctx1 = elFecha.getContext('2d');
-    if(chartFecha) chartFecha.destroy();
-    
-    const gradient = ctx1.createLinearGradient(0,0,0,260);
-    gradient.addColorStop(0, 'rgba(42,212,255,.35)');
-    gradient.addColorStop(1, 'rgba(42,212,255,0)');
-
-    chartFecha = new Chart(ctx1, {
-      type:'line',
-      data:{ 
-        labels: fechas.map(formatFecha), 
-        datasets:[{ 
-          data: fechas.map(f => porFecha[f]),
-          borderColor: chartColors.cyan,
-          backgroundColor: gradient,
-          borderWidth:2.5,
-          fill:true,
-          tension:.35,
-          pointRadius:3,
-          pointBackgroundColor: chartColors.cyan,
-          pointBorderColor:'#04101f',
-          pointBorderWidth:2, 
-        }] 
-      },
-      options:{ 
-        responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:(c) => ' ' + fmt(c.parsed.y, 'USD') + ' (Bs convertidos a USD)' } } },
-        scales:{ 
-          x:{ grid:{ color:chartColors.grid }, ticks:{ color:chartColors.text, font:{ family:"'JetBrains Mono', monospace", size:10.5 } } }, 
-          y:{ beginAtZero:true, grid:{ color:chartColors.grid }, ticks:{ color:chartColors.text, font:{ family:"'JetBrains Mono', monospace", size:10.5 } } } 
-        } 
+  const g = { Bs:0, USD:0, USDT:0, Efectivo:0 };
+  lista.forEach(r => { if (r.moneda && r.usd !== null) g[r.moneda] += r.usd; });
+  const totalG = Object.values(g).reduce((a,b) => a + b, 0);
+  const ctx2 = document.getElementById('chartMoneda').getContext('2d');
+  if (chartMoneda) chartMoneda.destroy();
+  chartMoneda = new Chart(ctx2, {
+    type:'doughnut',
+    data:{ labels:['Bolívares (≈USD)','USD (Zelle/Transf.)','USDT (Binance)','Efectivo'],
+      datasets:[{ data:[g.Bs, g.USD, g.USDT, g.Efectivo], backgroundColor:[C.blue, C.green, C.cyan, C.amber],
+        borderColor:'#0c1830', borderWidth:3, hoverOffset:6 }] },
+    options:{
+      responsive:true, maintainAspectRatio:false, cutout:'66%',
+      plugins:{
+        legend:{ position:'bottom', labels:{ color:C.text, boxWidth:10, boxHeight:10, font:{ family:"'Inter', sans-serif", size:11.5 } } },
+        tooltip:{ callbacks:{ label:c => ' ' + c.label + ': ' + fmt(c.parsed, 'USD') + (totalG ? ' (' + (c.parsed / totalG * 100).toFixed(1) + '%)' : '') } }
       }
-    });
+    }
+  });
+}
 
-    const grupos = { Bs:0, USD:0, USDT:0, Efectivo:0 };
-    datos.forEach(p => {
-      const m = p.moneda || mapMoneda(p.tipoPago);
-      if(grupos[m] !== undefined) grupos[m] += montoParaGrafico(p);
-    });
+/* =====================================================================
+   EXPORTAR (para cuadrar contra tu análisis externo)
+   ===================================================================== */
+function exportarCSV(){
+  const cols = ['Fecha','Empresa','Cliente','Titular','Referencia','Estatus','Concepto','Concepto original','Método','Moneda','Moneda original','Monto','Tasa','Equivalente USD','Observaciones'];
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const num = n => (n === null || n === undefined || n === '') ? '' : Number(n).toFixed(2);
+  const filas = FILTRADOS.map(r => [
+    r.fecha, r.empresa, r.cliente, r.titular, r.referencia, r.estatus, r.concepto, r.conceptoRaw, r.metodo,
+    r.moneda, r.monedaRaw, num(r.monto), r.moneda === 'Bs' ? num(r.tasa) : '', num(r.usd),
+    [...r.flags].map(f => AUDIT[f].t).join(' | ')
+  ].map(q).join(','));
+  const blob = new Blob(['﻿' + [cols.map(q).join(',')].concat(filas).join('\r\n')], { type:'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'pagos_bnh_' + new Date().toISOString().slice(0,10) + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
 
-    const ctx2 = document.getElementById('chartMoneda').getContext('2d');
-    if(chartMoneda) chartMoneda.destroy();
-    chartMoneda = new Chart(ctx2, {
-      type:'doughnut',
-      data:{ 
-        labels:['Bolívares','USD (Zelle/Transferencia)','USDT (Binance)','Efectivo'],
-        datasets:[{ 
-          data:[grupos.Bs, grupos.USD, grupos.USDT, grupos.Efectivo],
-          backgroundColor:[chartColors.blue, chartColors.green, chartColors.cyan, chartColors.amber], 
-          borderColor:'#0c1830', borderWidth:3, hoverOffset:6 
-        }] 
-      },
-      options:{ 
-        responsive:true, maintainAspectRatio:false, cutout:'68%',
-        plugins:{ legend:{ position:'bottom', labels:{ color:chartColors.text, boxWidth:10, boxHeight:10, font:{ family:"'Inter', sans-serif", size:11.5 } } }, tooltip:{ callbacks:{ label:(c) => ' ' + c.label + ': ' + fmt(c.parsed, 'USD') } } } 
-      }
-    });
-  }
+/* =====================================================================
+   EVENTOS
+   ===================================================================== */
+let tDeb;
+['fDesde','fHasta','fTipo','fConcepto','fEmpresa','fEstatus'].forEach(id =>
+  document.getElementById(id).addEventListener('change', aplicarFiltros));
+document.getElementById('fCliente').addEventListener('input', () => { clearTimeout(tDeb); tDeb = setTimeout(aplicarFiltros, 180); });
 
-  function datosEjemplo(){
-    return [
-      { fecha:"2026-07-28", empresa:"Grupo Sur", cliente:"Clínica Vista Sur",   titular:"M. Herrera",  moneda:"USD",     monto:420.00,  comprobante:"#0912" },
-      { fecha:"2026-07-27", empresa:"Salud C.A", cliente:"Hospital Los Andes",  titular:"J. Fuenmayor",moneda:"Bs",      monto:15230.50,tasaBinance:38.10, comprobante:"#0911" },
-      { fecha:"2026-07-27", empresa:"Norte INC", cliente:"Centro Médico Norte", titular:"C. Salas",    moneda:"USDT",    monto:150.00,  comprobante:"#0910" },
-      { fecha:"2026-07-26", empresa:"Privado",   cliente:"Dra. Estrella Pino",  titular:"E. Pino",     moneda:"Efectivo",monto:80.00,   comprobante:"#0909" },
-      { fecha:"2026-07-25", empresa:"Grupo Sur", cliente:"Clínica Vista Sur",   titular:"M. Herrera",  moneda:"USD",     monto:210.00,  comprobante:"#0908" },
-      { fecha:"2026-07-24", empresa:"RM C.A.",   cliente:"Suministros RM",      titular:"R. Marín",    moneda:"Bs",      monto:8890.00, tasaBinance:37.80, comprobante:"#0907" },
-      { fecha:"2026-07-23", empresa:"Salud C.A", cliente:"Hospital Los Andes",  titular:"J. Fuenmayor",moneda:"USDT",    monto:300.00,  comprobante:"#0906" },
-      { fecha:"2026-07-22", empresa:"Norte INC", cliente:"Centro Médico Norte", titular:"C. Salas",    moneda:"Efectivo",monto:60.00,   comprobante:"#0905" },
-      { fecha:"2026-07-21", empresa:"Privado",   cliente:"Dra. Estrella Pino",  titular:"E. Pino",     moneda:"USD",     monto:135.00,  comprobante:"#0904" },
-      { fecha:"2026-07-20", empresa:"RM C.A.",   cliente:"Suministros RM",      titular:"R. Marín",    moneda:"Bs",      monto:5120.75, tasaBinance:37.50, comprobante:"#0903" },
-    ];
-  }
+/* =====================================================================
+   DATOS DE EJEMPLO (solo cuando se abre fuera de Apps Script)
+   ===================================================================== */
+function datosEjemplo(){
+  return [
+    { fecha:"2026-07-28", empresa:"Grupo Sur", cliente:"Clínica Vista Sur",   titular:"M. Herrera",   tipoPago:"Zelle",    moneda:"USD",  monto:420,         conceptoPago:"Cuota viva", comprobante:"#0912", estatus:"VALIDADO" },
+    { fecha:"2026-07-27", empresa:"Salud C.A", cliente:"Hospital Los Andes",  titular:"J. Fuenmayor", tipoPago:"Bs",       moneda:"Bs",   monto:"305.745,00", tasaBinance:935, conceptoPago:"Inicial", comprobante:"#0911", estatus:"VALIDADO" },
+    { fecha:"2026-07-27", empresa:"Norte INC", cliente:"Centro Médico Norte", titular:"C. Salas",     tipoPago:"Binance",  moneda:"USDT", monto:150,         conceptoPago:"Pago IVA",   comprobante:"#0910", estatus:"VALIDADO" },
+    { fecha:"26/07/2026", empresa:"Privado",   cliente:"Dra. Estrella Pino",  titular:"E. Pino",      tipoPago:"Efectivo", moneda:"Efectivo", monto:80,      conceptoPago:"Reserva",    comprobante:"#0909", estatus:"VALIDADO" },
+    { fecha:"2026-07-25", empresa:"Grupo Sur", cliente:"Clínica Vista Sur",   titular:"M. Herrera",   tipoPago:"Zelle",    moneda:"USD",  monto:"263,040.00", conceptoPago:"Cuota Viva ", comprobante:"#0908", estatus:"PENDIENTE" },
+    { fecha:"2026-07-24", empresa:"RM C.A.",   cliente:"Suministros RM",      titular:"R. Marín",     tipoPago:"Bs",       moneda:"Bs",   monto:187000,      conceptoPago:"Cuota viva", comprobante:"#0907", estatus:"VALIDADO" },
+    { fecha:"2026-07-23", empresa:"Salud C.A", cliente:"Hospital Los Andes",  titular:"J. Fuenmayor", tipoPago:"Binance",  moneda:"USDT", monto:300,         conceptoPago:"Servicio Tecnico", comprobante:"#0906", estatus:"VALIDADO" },
+    { fecha:"2026-07-22", empresa:"Norte INC", cliente:"Centro Médico Norte", titular:"C. Salas",     tipoPago:"Zelle",    moneda:"Dólares", monto:60,       conceptoPago:"",           comprobante:"#0905", estatus:"VALIDADO" },
+    { fecha:"2026-07-21", empresa:"Privado",   cliente:"Dra. Estrella Pino",  titular:"E. Pino",      tipoPago:"Zelle",    moneda:"USD",  monto:135,         conceptoPago:"Cuota viva", referencia:"ABC12345", comprobante:"#0904", estatus:"VALIDADO" },
+    { fecha:"2026-07-21", empresa:"Privado",   cliente:"Dra. Estrella Pino",  titular:"E. Pino",      tipoPago:"Zelle",    moneda:"USD",  monto:135,         conceptoPago:"Cuota viva", referencia:"ABC12345", comprobante:"#0903", estatus:"VALIDADO" },
+    { fecha:"2026-07-20", empresa:"RM C.A.",   cliente:"Suministros RM",      titular:"R. Marín",     tipoPago:"Bs",       moneda:"Bs",   monto:5120.75,     tasaBinance:"930,50", conceptoPago:"Cuota viva", comprobante:"#0902", estatus:"VALIDADO" },
+  ];
+}
 </script>
 </body>
 </html>
