@@ -257,7 +257,8 @@
         <select id="fConcepto">
           <option value="">Todos</option>
           <option>Inicial</option><option>Reserva</option><option>Pago IVA</option>
-          <option>Cuota viva</option><option>Servicio Técnico</option><option value="Otro">Otro / sin concepto</option>
+          <option>Cuota viva</option><option>Servicio Técnico</option>
+          <option>Video printer</option><option>Productos SONY</option><option value="Otro">Otro / sin concepto</option>
         </select>
       </div>
       <div class="f"><label for="fEmpresa">Empresa</label><select id="fEmpresa"><option value="">Todas</option></select></div>
@@ -337,6 +338,8 @@ const CONCEPTOS = [
   { key:'Pago IVA',         accent:'a-cyan'   },
   { key:'Cuota viva',       accent:'a-amber'  },
   { key:'Servicio Técnico', accent:'a-violet' },
+  { key:'Video printer',    accent:'a-cyan'   },
+  { key:'Productos SONY',   accent:'a-blue'   },
 ];
 const PAGE = 250;
 const C = { grid:'rgba(120,190,255,.08)', text:'#8296b3', cyan:'#2ad4ff', blue:'#3d6bff', green:'#34e6a8', amber:'#ffb648' };
@@ -472,6 +475,8 @@ function normMetodo(v, moneda){
 function normConcepto(v){
   const k = clave(v);
   if (!k) return 'Otro';
+  if (k.includes('video') || k.includes('printer')) return 'Video printer';
+  if (k.includes('sony')) return 'Productos SONY';
   if (k.includes('inicial')) return 'Inicial';
   if (k.includes('reserva')) return 'Reserva';
   if (k.includes('cuota')) return 'Cuota viva';      // antes que IVA: "cuota v-IVA" contiene "iva"
